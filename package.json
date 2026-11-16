@@ -1,0 +1,9 @@
+{
+  "name": "space-miner",
+  "version": "1.0.0",
+  "description": "SPACE MINER - Explore. Mine. Upgrade. Expand. A pixel-art space mining game.",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node tools/serve.mjs", "test": "node --test" },
+  "license": "MIT"
+}
