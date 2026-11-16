@@ -1,10 +1,11 @@
-// AchievementManager: long-term milestones that pay research points.
+// AchievementManager: long-term milestones that pay credits.
 import { ACHIEVEMENTS, ACHIEVEMENT_IDS } from '../core/config.js';
 import { emit } from '../core/state.js';
+import { addCredits } from './EconomyManager.js';
 
 export function achievementValue(state, a) {
   if (a.stat === 'drones') return state.drones.length;
-  if (a.stat === 'sectors') return state.unlockedSectors.length;
+  if (a.stat === 'weapons') return Object.keys(state.weapons).length;
   return state.stats[a.stat] || 0;
 }
 
@@ -14,8 +15,8 @@ export function updateAchievements(state) {
     const a = ACHIEVEMENTS[id];
     if (achievementValue(state, a) >= a.goal) {
       state.achievements[id] = Date.now();
-      state.rp += a.rp;
-      emit(state, 'achievement', { id, name: a.name, desc: a.desc, rp: a.rp });
+      addCredits(state, a.credits);
+      emit(state, 'achievement', { id, name: a.name, credits: a.credits });
     }
   }
 }

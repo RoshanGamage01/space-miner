@@ -1,17 +1,7 @@
-// UpgradeManager: ship system upgrades, drone fleet, ship hulls, research
-// and unlocking / warping between asteroid fields. Every purchase validates
-// before it mutates state and returns { ok, reason }.
-import {
-  DRONE_UPGRADES,
-  RESEARCH,
-  SECTORS,
-  SHIPS,
-  UPGRADES,
-  WARP_FUEL,
-  droneCost,
-  upgradeReqLevel,
-} from '../core/config.js';
-import { addDrone, emit, getStats, researchAvailable, upgradeCost } from '../core/state.js';
+// UpgradeManager: ship upgrades, weapons, drones, ship hulls and sectors.
+// Every purchase validates before it mutates state and returns { ok, reason }.
+import { SECTORS, SHIPS, UPGRADES, WEAPONS, WEAPON_MAX, droneCost, weaponUpgradeCost } from '../core/config.js';
+import { addDrone, emit, getStats, upgradeCost } from '../core/state.js';
 import { generateSector } from './AsteroidManager.js';
 
 const fail = (reason) => ({ ok: false, reason });
@@ -21,51 +11,55 @@ export function upgradeInfo(state, id) {
   const level = state.upgrades[id];
   const maxed = level >= def.max;
   const cost = maxed ? 0 : upgradeCost(def, level);
-  const reqLevel = upgradeReqLevel(level + 1);
-  return { def, level, maxed, cost, reqLevel, locked: !maxed && state.level < reqLevel, affordable: !maxed && state.credits >= cost };
+  return { def, level, maxed, cost, affordable: !maxed && state.credits >= cost };
 }
 
 export function buyUpgrade(state, id) {
   if (!UPGRADES[id]) return fail('Unknown upgrade');
   const info = upgradeInfo(state, id);
-  if (info.maxed) return fail('Already maxed');
-  if (info.locked) return fail(`Requires pilot level ${info.reqLevel}`);
+  if (info.maxed) return fail('Maxed out');
   if (!info.affordable) return fail('Not enough credits');
   const before = getStats(state);
   state.credits -= info.cost;
   state.upgrades[id]++;
   state.stats.upgrades++;
-  const g = info.def.group;
-  state.stats.byGroup[g] = (state.stats.byGroup[g] || 0) + 1;
-  // Bigger tanks/shields come pre-filled with the difference.
+  state.stats.byUpgrade[id] = (state.stats.byUpgrade[id] || 0) + 1;
   const after = getStats(state);
-  state.ship.fuel += Math.max(0, after.fuelMax - before.fuelMax);
+  state.ship.hull += Math.max(0, after.hullMax - before.hullMax);
   state.ship.shield += Math.max(0, after.shieldMax - before.shieldMax);
-  state.ship.energy += Math.max(0, after.energyMax - before.energyMax);
-  emit(state, 'upgrade', { id, level: state.upgrades[id], name: info.def.name });
+  emit(state, 'upgrade', { id, level: state.upgrades[id] });
   return { ok: true };
 }
 
-export function droneUpgradeInfo(state, id) {
-  const def = DRONE_UPGRADES[id];
-  const level = state.droneUpgrades[id];
-  const maxed = level >= def.max;
-  const cost = maxed ? 0 : upgradeCost(def, level);
-  const reqLevel = upgradeReqLevel(level + 1);
-  return { def, level, maxed, cost, reqLevel, locked: !maxed && state.level < reqLevel, affordable: !maxed && state.credits >= cost };
+export function weaponInfo(state, id) {
+  const def = WEAPONS[id];
+  const level = state.weapons[id] || 0;
+  const owned = level > 0;
+  const maxed = level >= WEAPON_MAX;
+  const cost = !owned ? def.cost : maxed ? 0 : weaponUpgradeCost(id, level);
+  return { def, level, owned, maxed, cost, locked: !owned && state.level < def.level, affordable: state.credits >= cost, equipped: state.weapon === id };
 }
 
-export function buyDroneUpgrade(state, id) {
-  if (!DRONE_UPGRADES[id]) return fail('Unknown upgrade');
-  const info = droneUpgradeInfo(state, id);
-  if (info.maxed) return fail('Already maxed');
-  if (info.locked) return fail(`Requires pilot level ${info.reqLevel}`);
+// Buys the weapon, or upgrades it when already owned.
+export function buyWeapon(state, id) {
+  if (!WEAPONS[id]) return fail('Unknown weapon');
+  const info = weaponInfo(state, id);
+  if (info.maxed) return fail('Maxed out');
+  if (info.locked) return fail(`Unlocks at level ${info.def.level}`);
   if (!info.affordable) return fail('Not enough credits');
   state.credits -= info.cost;
-  state.droneUpgrades[id]++;
-  state.stats.upgrades++;
-  state.stats.byGroup.drones = (state.stats.byGroup.drones || 0) + 1;
-  emit(state, 'upgrade', { id, level: state.droneUpgrades[id], name: info.def.name });
+  state.weapons[id] = info.level + 1;
+  if (!info.owned) {
+    state.weapon = id;
+    emit(state, 'weaponBought', { id, name: info.def.name });
+  } else emit(state, 'upgrade', { id, level: state.weapons[id] });
+  return { ok: true };
+}
+
+export function equipWeapon(state, id) {
+  if (!state.weapons[id]) return fail('Not owned');
+  state.weapon = id;
+  emit(state, 'equip', { id });
   return { ok: true };
 }
 
@@ -78,13 +72,12 @@ export function droneBuyInfo(state) {
 
 export function buyDrone(state) {
   const info = droneBuyInfo(state);
-  if (info.full) return fail('No free drone slot: level up or research Drone Bay');
+  if (info.full) return fail('No free slot: more at higher level');
   if (!info.affordable) return fail('Not enough credits');
   state.credits -= info.cost;
   const d = addDrone(state);
   d.x = 0;
   d.y = 0;
-  state.stats.drones = Math.max(state.stats.drones, state.drones.length);
   emit(state, 'droneDeployed', { count: state.drones.length });
   return { ok: true };
 }
@@ -93,7 +86,7 @@ export function buyShip(state, id) {
   const def = SHIPS[id];
   if (!def) return fail('Unknown ship');
   if (state.ownedShips.includes(id)) return switchShip(state, id);
-  if (state.level < def.level) return fail(`Requires pilot level ${def.level}`);
+  if (state.level < def.level) return fail(`Unlocks at level ${def.level}`);
   if (state.credits < def.cost) return fail('Not enough credits');
   state.credits -= def.cost;
   state.ownedShips.push(id);
@@ -111,60 +104,29 @@ export function switchShip(state, id) {
   return { ok: true };
 }
 
-export function doResearch(state, id) {
-  const def = RESEARCH[id];
-  if (!def) return fail('Unknown research');
-  if (state.research[id]) return fail('Already researched');
-  if (!researchAvailable(state, id)) return fail('Research the prerequisites first');
-  if (state.rp < def.cost) return fail('Not enough research points');
-  state.rp -= def.cost;
-  state.research[id] = true;
-  if (id === 'hull') state.ship.hull = getStats(state).hullMax;
-  emit(state, 'research', { id, name: def.name });
-  return { ok: true };
-}
-
 export function sectorInfo(state, id) {
   const def = SECTORS[id];
-  const unlocked = state.unlockedSectors.includes(id);
-  const needResearch = def.research && !state.research[def.research];
-  return {
-    def,
-    unlocked,
-    current: state.sector === id,
-    levelOk: state.level >= def.level,
-    researchOk: !needResearch,
-    affordable: state.credits >= def.cost,
-  };
+  return { def, unlocked: state.unlockedSectors.includes(id), current: state.sector === id, levelOk: state.level >= def.level, affordable: state.credits >= def.cost };
 }
 
-export function unlockSector(state, id) {
+// Unlocks (if needed) and warps in one step.
+export function travel(state, id) {
   if (!SECTORS[id]) return fail('Unknown sector');
   const info = sectorInfo(state, id);
-  if (info.unlocked) return fail('Already charted');
-  if (!info.levelOk) return fail(`Requires pilot level ${info.def.level}`);
-  if (!info.researchOk) return fail(`Requires ${RESEARCH[info.def.research].name} research`);
-  if (!info.affordable) return fail('Not enough credits for the jump license');
-  state.credits -= info.def.cost;
-  state.unlockedSectors.push(id);
-  state.stats.sectors = state.unlockedSectors.length;
-  emit(state, 'sectorUnlocked', { id, name: info.def.name });
-  return { ok: true };
-}
-
-export function warp(state, id) {
-  if (!SECTORS[id]) return fail('Unknown sector');
-  if (!state.unlockedSectors.includes(id)) return fail('Sector not charted yet');
-  if (state.sector === id) return fail('Already here');
-  if (state.ship.fuel < WARP_FUEL) return fail(`Warp needs ${WARP_FUEL} fuel`);
-  state.ship.fuel -= WARP_FUEL;
+  if (info.current) return fail('Already here');
+  if (!info.unlocked) {
+    if (!info.levelOk) return fail(`Unlocks at level ${info.def.level}`);
+    if (!info.affordable) return fail('Not enough credits');
+    state.credits -= info.def.cost;
+    state.unlockedSectors.push(id);
+  }
   state.sector = id;
-  if (!state.explored[id]) state.explored[id] = {};
   state.ship.x = 0;
   state.ship.y = 120;
   state.ship.vx = state.ship.vy = 0;
   state.ship.docked = false;
   state.event = null;
+  state.nextPatrolAt = state.time + 40;
   generateSector(state);
   for (const d of state.drones) {
     d.x = (Math.random() - 0.5) * 60;

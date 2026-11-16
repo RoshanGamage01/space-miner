@@ -3,10 +3,11 @@
 // explosion reads as chunky pixel art. It only reads simulation state.
 import { RESOURCES, STATION, SECTORS } from '../core/config.js';
 import { dist, len } from '../core/math.js';
-import { asteroidSprite, mapSprite, shade, stationHub } from './sprites.js';
+import { asteroidSprite, mapSprite, mothershipSprite, shade, stationHub } from './sprites.js';
 import { createBackground, drawBackground, drawDebris } from './background.js';
 import { ParticlePool } from './particles.js';
 import { drawText } from './pixelfont.js';
+import { CockpitRenderer } from './CockpitRenderer.js';
 
 const LASER = { core: '#ffffff', mid: '#5ef1ff', glow: '#2a9dff' };
 
@@ -28,6 +29,8 @@ export class Renderer {
     this.warpT = 0;
     this.sparkT = 0;
     this.trailT = 0;
+    this.muzzleT = 0;
+    this.cockpit = new CockpitRenderer(this);
     this.resize();
   }
 
@@ -65,19 +68,10 @@ export class Renderer {
           if (dist(e.x, e.y, ship.x, ship.y) < 260) cam.shake(e.r > 20 ? 3 : 1.5, 0.25);
           break;
         }
-        case 'dmg':
-          if (e.amount >= 1) P.text(e.x, e.y, String(Math.round(e.amount)), '#ffe9a8', 1, 0.7);
-          break;
         case 'collect':
           if (e.res === 'credits') P.text(ship.x, ship.y - 16, `+${e.qty}C`, '#ffd23e', 1, 1.2);
           else if (e.qty > 0) P.text(ship.x, ship.y - 16, `+${e.qty} ${RESOURCES[e.res].name.split(' ').pop()}`, RESOURCES[e.res].glow, 1, 1.1);
           P.burst(e.x, e.y, 5, e.res === 'credits' ? '#ffd23e' : RESOURCES[e.res].color, 30, 0.4, 1, 2);
-          break;
-        case 'xp':
-          if (e.amount >= 10) P.text(e.x, e.y - 8, `+${e.amount} XP`, '#b99bff', 1, 1.2);
-          break;
-        case 'deposit':
-          P.text(e.x, e.y - 8, `+${e.qty}`, e.escort ? '#7dffb0' : '#5ef1ff', 1, 1);
           break;
         case 'hurt':
           this.hurtT = 0.35;
@@ -96,11 +90,35 @@ export class Renderer {
           this.flashT = 0.12;
           break;
         }
-        case 'pirateDown':
-          P.burst(e.x, e.y, 30, '#ff6a3d', 120, 0.7, 1, 1);
-          P.burst(e.x, e.y, 18, '#3a1520', 50, 0.9, 3, 0);
-          P.burst(e.x, e.y, 10, '#fff1a8', 40, 0.4, 3, 2);
-          cam.shake(3, 0.3);
+        case 'kill': {
+          const alien = e.kind !== 'pirate';
+          const big = e.boss ? 4 : e.r > 10 ? 2 : 1;
+          P.burst(e.x, e.y, 22 * big, alien ? '#9dff4a' : '#ff6a3d', 110 * Math.sqrt(big), 0.7, 1, 1);
+          P.burst(e.x, e.y, 12 * big, alien ? '#1f4d24' : '#3a1520', 50 * big, 0.9, 3, 0);
+          P.burst(e.x, e.y, 8 * big, '#fff1a8', 40, 0.4, 3, 2);
+          const ring = P.spawn(e.x, e.y, 0, 0, 0.4, alien ? '#9dff4a' : '#ff8c42', 4, 3, 0, 60 * big);
+          if (ring) ring.drag = 0;
+          if (e.combo >= 2) P.text(e.x, e.y - 12, `x${e.combo}`, '#ffd23e', e.combo >= 5 ? 2 : 1, 1);
+          cam.shake(e.boss ? 10 : 2 + big, e.boss ? 1 : 0.25);
+          if (e.boss) this.flashT = 0.35;
+          break;
+        }
+        case 'blast': {
+          P.burst(e.x, e.y, 26, '#ffd23e', 120, 0.5, 1, 1);
+          P.burst(e.x, e.y, 10, '#ff8c42', 60, 0.6, 3, 2);
+          const ring = P.spawn(e.x, e.y, 0, 0, 0.35, '#ffe2a0', 3, 3, 0, e.r * 3);
+          if (ring) ring.drag = 0;
+          cam.shake(2, 0.2);
+          break;
+        }
+        case 'shotHit':
+          P.burst(e.x, e.y, 5, e.color || '#ffffff', 60, 0.25, 1, 1);
+          break;
+        case 'shoot':
+          this.muzzleT = 0.05;
+          break;
+        case 'enemyShot':
+          P.burst(e.x, e.y, 3, '#9dff4a', 30, 0.2, 1, 2);
           break;
         case 'shipDestroyed':
           P.burst(e.x, e.y, 60, '#ff8c42', 160, 1, 1, 1);
@@ -108,15 +126,11 @@ export class Renderer {
           cam.shake(6, 0.6);
           this.flashT = 0.3;
           break;
-        case 'boltHit':
-          P.burst(e.x, e.y, 6, '#ff6a3d', 50, 0.3, 1, 1);
-          break;
         case 'stolen':
           P.text(e.x, e.y - 10, `-${e.qty} ${RESOURCES[e.res].name.split(' ').pop()}`, '#ff4d6d', 1, 1.4);
           break;
         case 'salvage':
           P.burst(e.x, e.y, 40, '#7dffb0', 100, 0.9, 1, 1);
-          P.text(e.x, e.y - 14, `+${e.credits}C`, '#ffd23e', 1, 1.6);
           break;
         case 'levelUp': {
           this.levelT = 1.2;
@@ -130,17 +144,8 @@ export class Renderer {
           this.flashT = 0.4;
           cam.snap(ship.x, ship.y);
           break;
-        case 'pirateShot':
-          P.burst(e.x, e.y, 3, '#ff6a3d', 30, 0.2, 1, 2);
-          break;
-        case 'discover':
-          P.text(ship.x, ship.y - 28, 'RARE CRYSTAL!', '#f3c6ff', 1, 2);
-          break;
         case 'cargoFull':
           P.text(ship.x, ship.y - 24, 'CARGO FULL', '#ff4d6d', 1, 1.4);
-          break;
-        case 'explore':
-          if (e.rp) P.text(ship.x, ship.y - 30, '+1 RESEARCH', '#7dffb0', 1, 1.6);
           break;
       }
     }
@@ -154,11 +159,17 @@ export class Renderer {
       this.bgSector = state.sector;
     }
     this.fx.update(dt);
-    for (const k of ['hurtT', 'flashT', 'levelT', 'warpT']) if (this[k] > 0) this[k] -= dt;
+    for (const k of ['hurtT', 'flashT', 'levelT', 'warpT', 'muzzleT']) if (this[k] > 0) this[k] -= dt;
     const ox = cam.left;
     const oy = cam.top;
     const ship = state.ship;
     const t = this.time;
+
+    if (view.mode === 'cockpit') {
+      this.cockpit.render(state, stats, dt, view);
+      this.drawOverlays(state, stats, t);
+      return;
+    }
 
     ctx.fillStyle = '#05060f';
     ctx.fillRect(0, 0, W, H);
@@ -169,35 +180,21 @@ export class Renderer {
     for (const d of state.derelicts) this.drawDerelict(d, ox, oy, view);
 
     // Asteroids.
-    let hover = null;
     for (const a of state.asteroids) {
       const sx = a.x - ox;
       const sy = a.y - oy;
       if (sx < -a.r - 20 || sy < -a.r - 20 || sx > W + a.r + 20 || sy > H + a.r + 20) continue;
       this.drawAsteroid(a, sx, sy, t);
-      if (view.aim && dist(view.aim.x, view.aim.y, a.x, a.y) < a.r + 4) hover = a;
     }
     this.drawPickups(state, ox, oy, t);
     for (const d of state.drones) this.drawDrone(d, ox, oy, t);
-    for (const p of state.pirates) this.drawPirate(p, ox, oy, t, ship);
-    for (const b of state.projectiles) {
-      const x = Math.round(b.x - ox);
-      const y = Math.round(b.y - oy);
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = '#ff6a3d';
-      ctx.fillRect(x - 2, y - 1, 4, 3);
-      ctx.fillStyle = '#ffe2a0';
-      ctx.fillRect(x - 1, y, 2, 1);
-      ctx.globalCompositeOperation = 'source-over';
-    }
+    for (const e of state.enemies) this.drawEnemy(e, ox, oy, t, ship);
+    this.drawShots(state, ox, oy);
     this.drawShip(state, stats, ox, oy, t, dt);
 
     this.fx.draw(ctx, ox, oy, W, H);
     drawDebris(ctx, this.bg, { x: cam.x, y: cam.y }, W, H);
 
-    // Readouts for the asteroid under the cursor (scanner identification).
-    const focus = hover || (ship.laser?.hit && ship.laser.kind === 'rock' ? state.asteroids.find((a) => dist(a.x, a.y, ship.laser.x1, ship.laser.y1) < a.r + 2) : null);
-    if (focus) this.drawAsteroidInfo(focus, stats, ox, oy, view);
 
     this.drawPrompts(state, ox, oy, view);
     this.drawIndicators(state, stats, ox, oy, view);
@@ -284,7 +281,6 @@ export class Renderer {
       }
       ctx.globalAlpha = 1;
     }
-    drawText(ctx, 'STATION', cx, cy - 58, '#9fe8ff');
   }
 
   drawAsteroid(a, sx, sy, t) {
@@ -335,18 +331,6 @@ export class Renderer {
       ctx.fillStyle = a.hp / a.maxHp > 0.5 ? '#7dffb0' : a.hp / a.maxHp > 0.25 ? '#ffd23e' : '#ff4d6d';
       ctx.fillRect(x, y, Math.max(1, Math.round((w * a.hp) / a.maxHp)), 2);
     }
-  }
-
-  drawAsteroidInfo(a, stats, ox, oy, view) {
-    const ctx = this.ctx;
-    const sx = a.x - ox;
-    const sy = a.y - oy - a.r - 9;
-    const res = RESOURCES[a.type];
-    const lines = [];
-    lines.push([a.special ? 'MOTHERLODE' : res.name.toUpperCase(), stats.ident >= 1 ? res.glow : '#c8d0e6']);
-    if (stats.ident >= 2) lines.push([`YIELD ${a.yield}`, '#e6eaf5']);
-    if (stats.ident >= 3) lines.push([`~${Math.round(a.yield * view.priceOf(a.type))}C`, '#ffd23e']);
-    lines.reverse().forEach(([txt, col], i) => drawText(ctx, txt, sx, sy - i * 7, col));
   }
 
   drawPickups(state, ox, oy, t) {
@@ -411,7 +395,7 @@ export class Renderer {
     const back = spr.w / 2 - 1;
     const ex = sx - Math.cos(ship.angle) * back;
     const ey = sy - Math.sin(ship.angle) * back;
-    if (ship.thrusting > 0 && ship.fuel > 0) {
+    if (ship.thrusting > 0) {
       this.drawFlame(ex, ey, ship.angle, 3 + spr.h * 0.25, ship.boosting);
       this.trailT -= dt;
       if (this.trailT <= 0) {
@@ -483,7 +467,7 @@ export class Renderer {
       this.sparkT -= dt;
       if (this.sparkT <= 0) {
         this.sparkT = 0.03;
-        const col = L.kind === 'pirate' ? '#ff6a3d' : RESOURCES[L.type]?.color || '#ffffff';
+        const col = L.kind === 'enemy' ? '#9dff4a' : RESOURCES[L.type]?.color || '#ffffff';
         const back = Math.atan2(y0 - y1, x0 - x1);
         for (let i = 0; i < 2; i++) {
           const a = back + (Math.random() - 0.5) * 2.2;
@@ -533,36 +517,102 @@ export class Renderer {
     }
   }
 
-  drawPirate(p, ox, oy, t, ship) {
+  drawEnemy(e, ox, oy, t, ship) {
     const ctx = this.ctx;
-    const x = Math.round(p.x - ox);
-    const y = Math.round(p.y - oy);
-    if (x < -30 || y < -30 || x > this.W + 30 || y > this.H + 30) return;
-    const spr = mapSprite('pirate', 'pirate');
-    const back = spr.w / 2 - 1;
-    this.drawFlame(x - Math.cos(p.angle) * back, y - Math.sin(p.angle) * back, p.angle, 4, p.flee, ['#ffd0a0', '#ff4d3d', '#7a1020']);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(Math.round(p.angle * 16) / 16);
-    ctx.drawImage(spr.img, -Math.floor(spr.w / 2), -Math.floor(spr.h / 2));
-    if (p.hitT > 0) {
-      ctx.globalAlpha = 0.7;
-      ctx.drawImage(spr.flash, -Math.floor(spr.w / 2), -Math.floor(spr.h / 2));
-      ctx.globalAlpha = 1;
-    }
-    ctx.restore();
-    const w = 14;
-    ctx.fillStyle = '#05060f';
-    ctx.fillRect(x - w / 2 - 1, y + 10, w + 2, 3);
-    ctx.fillStyle = '#ff4d6d';
-    ctx.fillRect(x - w / 2, y + 11, Math.max(1, Math.round((w * p.hp) / p.maxHp)), 1);
-    if (p.steal > 0.2) {
+    const x = Math.round(e.x - ox);
+    const y = Math.round(e.y - oy);
+    const m = e.r + 30;
+    if (x < -m || y < -m || x > this.W + m || y > this.H + m) return;
+    if (e.kind === 'mothership') {
+      const spr = mothershipSprite();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.5;
-      pixelLine(ctx, x, y, ship.x - ox, ship.y - oy, 1, '#ff4d6d');
-      ctx.globalAlpha = 1;
+      const g = ctx.createRadialGradient(x, y, 10, x, y, 60);
+      g.addColorStop(0, 'rgba(255,77,240,0.25)');
+      g.addColorStop(1, 'rgba(255,77,240,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - 60, y - 60, 120, 120);
       ctx.globalCompositeOperation = 'source-over';
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.round(t * 0.4 * 16) / 16);
+      ctx.drawImage(e.hitT > 0 ? spr.flash : spr.img, -spr.size / 2, -spr.size / 2);
+      ctx.restore();
+    } else {
+      const pal = e.kind === 'pirate' ? 'pirate' : e.kind === 'brute' ? 'brute' : 'alien';
+      const spr = mapSprite(e.kind, pal);
+      if (e.kind === 'pirate') {
+        const back = spr.w / 2 - 1;
+        this.drawFlame(x - Math.cos(e.angle) * back, y - Math.sin(e.angle) * back, e.angle, 4, e.flee, ['#ffd0a0', '#ff4d3d', '#7a1020']);
+      }
+      const k = e.kind === 'pirate' ? 1 : 1.5;
+      const w = spr.w * k;
+      const h = spr.h * k;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.round(e.angle * 16) / 16);
+      ctx.drawImage(spr.img, -w / 2, -h / 2, w, h);
+      if (e.hitT > 0 && Math.sin(t * 50) > 0) ctx.drawImage(spr.flash, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      // Hostile brackets.
+      const col = e.kind === 'pirate' ? '#ff8c42' : '#9dff4a';
+      const R = Math.round(e.r * 1.4 + 3);
+      const L = 3;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.75;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        ctx.fillRect(x + sx * R - (sx > 0 ? L - 1 : 0), y + sy * R, L, 1);
+        ctx.fillRect(x + sx * R, y + sy * R - (sy > 0 ? L - 1 : 0), 1, L);
+      }
+      ctx.globalAlpha = 1;
+      if (e.steal > 0.2) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.5;
+        pixelLine(ctx, x, y, ship.x - ox, ship.y - oy, 1, '#ff4d6d');
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+      }
     }
+    if (e.hp < e.maxHp && e.kind !== 'mothership') {
+      const w = Math.max(10, e.r * 2);
+      ctx.fillStyle = '#05060f';
+      ctx.fillRect(x - w / 2 - 1, y + e.r * 1.4 + 5, w + 2, 3);
+      ctx.fillStyle = e.kind === 'pirate' ? '#ff8c42' : '#9dff4a';
+      ctx.fillRect(x - w / 2, y + e.r * 1.4 + 6, Math.max(1, Math.round((w * e.hp) / e.maxHp)), 1);
+    }
+  }
+
+  drawShots(state, ox, oy) {
+    const ctx = this.ctx;
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of state.shots) {
+      const x = Math.round(s.x - ox);
+      const y = Math.round(s.y - oy);
+      if (x < -10 || y < -10 || x > this.W + 10 || y > this.H + 10) continue;
+      const sp = Math.hypot(s.vx, s.vy) || 1;
+      const ux = s.vx / sp;
+      const uy = s.vy / sp;
+      if (s.team === 'enemy') {
+        ctx.fillStyle = s.color;
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(x - 3, y - 3, 6, 6);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(x - 2, y - 2, 4, 4);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x - 1, y - 1, 2, 2);
+        continue;
+      }
+      const L = s.kind === 'rail' ? 14 : s.kind === 'missiles' ? 3 : 5;
+      ctx.globalAlpha = 0.35;
+      pixelLine(ctx, x, y, x - ux * L * 1.6, y - uy * L * 1.6, s.kind === 'rail' ? 3 : 2, s.color);
+      ctx.globalAlpha = 1;
+      pixelLine(ctx, x, y, x - ux * L, y - uy * L, 1, s.kind === 'missiles' ? '#ffffff' : s.color);
+      if (s.kind === 'missiles') {
+        this.fx.spawn(s.x - ux * 4, s.y - uy * 4, -ux * 20, -uy * 20, 0.35, '#ff8c42', 1, 2, 2);
+        ctx.fillStyle = '#ffd23e';
+        ctx.fillRect(x - 1, y - 1, 3, 3);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   drawDerelict(d, ox, oy, view) {
@@ -590,8 +640,7 @@ export class Renderer {
     const pulse = 0.65 + 0.35 * Math.sin(this.time * 6);
     if (view.canDock) drawText(this.ctx, 'PRESS E TO DOCK', sx, sy + 22, '#7dffb0', 1, 'center', pulse);
     else if (view.canSalvage) drawText(this.ctx, 'PRESS E TO SALVAGE', sx, sy + 22, '#7dffb0', 1, 'center', pulse);
-    if (ship.fuel <= 0 && !ship.docked) drawText(this.ctx, 'OUT OF FUEL - RETURN TO STATION', sx, sy + 30, '#ff4d6d', 1, 'center', pulse);
-    else if (ship.overheat) drawText(this.ctx, 'LASER OVERHEATED', sx, sy + 30, '#ff8c42', 1, 'center', pulse);
+    if (ship.overheat) drawText(this.ctx, 'LASER OVERHEATED', sx, sy + 30, '#ff8c42', 1, 'center', pulse);
   }
 
   // Edge-of-screen arrows for things worth flying to.
@@ -599,14 +648,14 @@ export class Renderer {
     const targets = [];
     const ship = state.ship;
     const hold = view.cargoPct;
-    targets.push({ x: 0, y: 0, color: hold >= 0.8 ? '#ffd23e' : '#5ef1ff', label: hold >= 1 ? 'SELL' : 'STATION' });
+    targets.push({ x: 0, y: 0, color: hold >= 0.8 ? '#ffd23e' : '#5ef1ff', label: hold >= 1 ? 'SELL' : '' });
     const ev = state.event;
     if (ev?.id === 'rare') {
       const a = state.asteroids.find((q) => q.id === ev.target);
-      if (a) targets.push({ x: a.x, y: a.y, color: '#d66bff', label: 'RARE' });
+      if (a) targets.push({ x: a.x, y: a.y, color: '#d66bff', label: '' });
     }
-    for (const d of state.derelicts) targets.push({ x: d.x, y: d.y, color: '#7dffb0', label: 'SALVAGE' });
-    for (const p of state.pirates) if (dist(p.x, p.y, ship.x, ship.y) < 800) targets.push({ x: p.x, y: p.y, color: '#ff4d6d', label: '' });
+    for (const d of state.derelicts) targets.push({ x: d.x, y: d.y, color: '#7dffb0', label: '' });
+    for (const e of state.enemies) if (dist(e.x, e.y, ship.x, ship.y) < 800) targets.push({ x: e.x, y: e.y, color: e.kind === 'pirate' ? '#ff8c42' : '#9dff4a', label: '' });
     const W = this.W;
     const H = this.H;
     const cx = ship.x - ox;
@@ -637,8 +686,7 @@ export class Renderer {
       }
       ctx.globalAlpha = 1;
       if (tg.label) {
-        const d = Math.round(dist(tg.x, tg.y, ship.x, ship.y) / 10) * 10;
-        drawText(ctx, `${tg.label} ${d}`, Math.max(28, Math.min(W - 28, px - ca * 16)), Math.max(top, Math.min(bottom, py - sa * 10)), tg.color);
+        drawText(ctx, tg.label, Math.max(28, Math.min(W - 28, px - ca * 16)), Math.max(top, Math.min(bottom, py - sa * 10)), tg.color);
       }
     }
   }
@@ -647,18 +695,6 @@ export class Renderer {
     const ctx = this.ctx;
     const { W, H } = this;
     const ev = state.event?.id;
-    if (ev === 'storm') {
-      ctx.fillStyle = '#ffb347';
-      ctx.globalAlpha = 0.07 + 0.03 * Math.sin(t * 9);
-      ctx.fillRect(0, 0, W, H);
-      ctx.globalAlpha = 0.25;
-      for (let i = 0; i < 6; i++) {
-        const y = Math.floor(((t * 140 + i * 97) % (H + 40)) - 20);
-        ctx.fillStyle = i % 2 ? '#ffe2a0' : '#ff8c42';
-        ctx.fillRect(0, y, W, 1);
-      }
-      ctx.globalAlpha = 1;
-    }
     const vignette = (color, strength) => {
       const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
       g.addColorStop(0, color + '00');

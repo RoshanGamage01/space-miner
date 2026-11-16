@@ -1,31 +1,46 @@
 // A simple autopilot that plays SPACE MINER headless through the same
 // input snapshot the keyboard and mouse produce. Used to check pacing.
-import { SIM_STEP, UPGRADE_IDS } from '../src/core/config.js';
+import { SIM_STEP, UPGRADE_IDS, WEAPON_IDS } from '../src/core/config.js';
 import { cargoUsed } from '../src/core/state.js';
-import { droneBuyInfo, upgradeInfo } from '../src/systems/UpgradeManager.js';
+import { droneBuyInfo, upgradeInfo, weaponInfo } from '../src/systems/UpgradeManager.js';
 
-const PRIORITY = ['laserDamage', 'cargoCapacity', 'laserEfficiency', 'laserSpeed', 'engineSpeed', 'cargoCollection', 'fuelTank', 'laserRange'];
+const PRIORITY = ['laser', 'cargo', 'shield', 'armor', 'engine'];
 
 function shop(engine, log) {
   const s = engine.state;
   engine.act('sell', 'all');
-  engine.act('refuel');
-  engine.act('repair');
   const d = droneBuyInfo(s);
   if (!d.full && d.affordable) {
     engine.act('buyDrone');
     log.push(`t=${s.time.toFixed(0)} drone #${s.drones.length}`);
   }
+  for (const id of WEAPON_IDS) {
+    const w = weaponInfo(s, id);
+    if (!w.owned && !w.locked && w.affordable) {
+      engine.act('buyWeapon', id);
+      log.push(`t=${s.time.toFixed(0)} weapon ${id}`);
+    }
+  }
   for (let k = 0; k < 6; k++) {
-    const pick = PRIORITY.concat(UPGRADE_IDS).find((id) => {
-      const i = upgradeInfo(s, id);
-      return i.affordable && !i.locked && !i.maxed;
-    });
+    const pick = PRIORITY.concat(UPGRADE_IDS).find((id) => upgradeInfo(s, id).affordable);
     if (!pick) break;
     engine.act('buyUpgrade', pick);
     log.push(`t=${s.time.toFixed(0)} ${pick} -> ${s.upgrades[pick]}`);
   }
 }
+
+const nearest = (list, x, y, max = Infinity) => {
+  let best = null;
+  let bd = max;
+  for (const o of list) {
+    const d = Math.hypot(o.x - x, o.y - y) - (o.r || 0);
+    if (d < bd) {
+      bd = d;
+      best = o;
+    }
+  }
+  return best ? { o: best, d: bd } : null;
+};
 
 export function playBot(engine, seconds) {
   const s = engine.state;
@@ -36,10 +51,21 @@ export function playBot(engine, seconds) {
   for (let i = 0; i < steps; i++) {
     const st = engine.stats;
     const ship = s.ship;
-    const input = { mx: 0, my: 0, fire: false, boost: false, interact: false, ability: false, menuOpen: false };
-    const full = cargoUsed(s.cargo) >= st.cargoCap * 0.9;
-    if (mode === 'mine' && (full || ship.fuel < st.fuelMax * 0.25)) mode = 'home';
-    if (mode === 'home') {
+    const input = { mx: 0, my: 0, fire: false, shoot: false, boost: false, interact: false, ability: false, menuOpen: false };
+    const enemy = nearest(s.enemies, ship.x, ship.y, 320);
+    if (mode === 'mine' && (cargoUsed(s.cargo) >= st.cargoCap * 0.9 || s.time - (s.botShopAt || 0) > 90)) mode = 'home';
+    if (enemy && mode !== 'docked' && !(mode === 'home' && engine.canDock())) {
+      // Fight: face the enemy, keep some distance, shoot.
+      const e = enemy.o;
+      input.aimX = e.x;
+      input.aimY = e.y;
+      input.shoot = true;
+      const d = Math.hypot(e.x - ship.x, e.y - ship.y) || 1;
+      const away = d < 110 ? -1 : 0.3;
+      input.mx = ((e.x - ship.x) / d) * away;
+      input.my = ((e.y - ship.y) / d) * away;
+      input.ability = d < 80 && ship.pulseCd <= 0;
+    } else if (mode === 'home') {
       const d = Math.hypot(ship.x, ship.y);
       if (engine.canDock()) {
         input.interact = true;
@@ -51,44 +77,32 @@ export function playBot(engine, seconds) {
         input.boost = d > 400;
       }
     } else if (mode === 'docked') {
-      if (dockTimer === 1) shop(engine, log);
+      if (dockTimer === 1) {
+        shop(engine, log);
+        s.botShopAt = s.time;
+      }
       dockTimer -= SIM_STEP;
       if (dockTimer <= 0) {
         engine.undock();
         mode = 'mine';
       }
     } else {
-      // Grab loose fragments first, otherwise mine the nearest rock.
-      let pick = null;
-      let pd = 140;
-      for (const p of s.pickups) {
-        const d = Math.hypot(p.x - ship.x, p.y - ship.y);
-        if (d < pd) {
-          pd = d;
-          pick = p;
-        }
-      }
-      let rock = null;
-      let rd = Infinity;
-      for (const a of s.asteroids) {
-        const d = Math.hypot(a.x - ship.x, a.y - ship.y) - a.r;
-        if (d < rd) {
-          rd = d;
-          rock = a;
-        }
-      }
+      const pick = nearest(s.pickups, ship.x, ship.y, 140);
+      const rock = nearest(s.asteroids, ship.x, ship.y);
       if (pick) {
-        input.mx = (pick.x - ship.x) / pd;
-        input.my = (pick.y - ship.y) / pd;
+        const d = Math.hypot(pick.o.x - ship.x, pick.o.y - ship.y) || 1;
+        input.mx = (pick.o.x - ship.x) / d;
+        input.my = (pick.o.y - ship.y) / d;
       } else if (rock) {
-        input.aimX = rock.x;
-        input.aimY = rock.y;
-        const dd = Math.hypot(rock.x - ship.x, rock.y - ship.y);
-        if (rd > st.laserRange * 0.6) {
-          input.mx = (rock.x - ship.x) / dd;
-          input.my = (rock.y - ship.y) / dd;
+        const a = rock.o;
+        input.aimX = a.x;
+        input.aimY = a.y;
+        const dd = Math.hypot(a.x - ship.x, a.y - ship.y);
+        if (rock.d > st.laserRange * 0.6) {
+          input.mx = (a.x - ship.x) / dd;
+          input.my = (a.y - ship.y) / dd;
         }
-        input.fire = rd < st.laserRange && !ship.overheat;
+        input.fire = rock.d < st.laserRange && !ship.overheat;
       }
     }
     engine.step(SIM_STEP, input);

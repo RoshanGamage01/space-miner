@@ -41,14 +41,13 @@ export function spawnAsteroid(state, opts = {}) {
     }
   }
   const stats = opts.stats || getStats(state);
-  const type = opts.type || pickType(state, len(x, y), stats.rareMult);
+  const type = opts.type || pickType(state, len(x, y));
   const size = opts.size || pickSize();
   const t = ASTEROID_TYPES[type];
   const s = ASTEROID_SIZES[size];
   const special = !!opts.special;
   const hp = Math.round(t.hp * s.hp * sec.hp * (special ? 2.5 : 1));
   let qty = randInt(t.yield[0], t.yield[1]) * s.yield * sec.yield * (special ? 3.5 : 1);
-  if (type === 'crystal') qty *= stats.crystalYield;
   const a = {
     id: state.nextId++,
     type,
@@ -81,8 +80,8 @@ export function spawnAsteroid(state, opts = {}) {
 export function generateSector(state) {
   state.asteroids.length = 0;
   state.pickups.length = 0;
-  state.pirates.length = 0;
-  state.projectiles.length = 0;
+  state.enemies.length = 0;
+  state.shots.length = 0;
   state.derelicts.length = 0;
   const sec = sectorDef(state);
   const stats = getStats(state);

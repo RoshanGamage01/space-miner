@@ -64,12 +64,6 @@ export function recordCollected(state, type, qty) {
   if (first) emit(state, 'discover', { res: type });
 }
 
-function bonusUnits(qty, chance) {
-  let bonus = 0;
-  for (let i = 0; i < qty; i++) if (Math.random() < chance) bonus++;
-  return bonus;
-}
-
 export function updatePickups(state, dt, stats) {
   const ship = state.ship;
   const used = cargoUsed(state.cargo);
@@ -105,7 +99,7 @@ export function updatePickups(state, dt, stats) {
           list.splice(i, 1);
           continue;
         }
-        const want = p.qty + bonusUnits(p.qty, stats.bonusChance);
+        const want = p.qty;
         const add = addToBag(state.cargo, p.type, want, stats.cargoCap);
         recordCollected(state, p.type, add);
         space -= add;

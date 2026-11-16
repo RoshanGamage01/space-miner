@@ -1,38 +1,38 @@
-// PlayerController: ship flight model (thrust, inertia, boost, fuel),
-// rotation toward the aim point, collisions, hull and shield.
+// PlayerController: ship flight model (thrust, inertia, boost), rotation
+// toward the aim point (or cockpit turning), collisions, hull and shield.
 import { emit, sectorDef } from '../core/state.js';
 import { RESOURCE_IDS } from '../core/config.js';
 import { angleTo, len, turnToward } from '../core/math.js';
 import { spawnPickup } from './ResourceManager.js';
+
+const TURN_RATE = 3.2; // rad/s in cockpit view
 
 export function updatePlayer(state, dt, input, stats) {
   const ship = state.ship;
   if (ship.pulseCd > 0) ship.pulseCd = Math.max(0, ship.pulseCd - dt);
   if (ship.invuln > 0) ship.invuln -= dt;
 
-  // Hull nanites and shield regeneration.
-  if (stats.hullRegen && ship.hull < stats.hullMax) ship.hull = Math.min(stats.hullMax, ship.hull + stats.hullRegen * dt);
   if (ship.shieldDelay > 0) ship.shieldDelay -= dt;
   else ship.shield = Math.min(stats.shieldMax, ship.shield + stats.shieldRegen * dt);
   ship.shield = Math.min(ship.shield, stats.shieldMax);
   ship.hull = Math.min(ship.hull, stats.hullMax);
-  ship.fuel = Math.min(ship.fuel, stats.fuelMax);
 
   if (ship.docked) {
+    // Docked: free repairs, held in the berth.
+    ship.hull = Math.min(stats.hullMax, ship.hull + stats.hullMax * 0.5 * dt);
+    ship.shield = Math.min(stats.shieldMax, ship.shield + stats.shieldMax * dt);
     ship.vx = ship.vy = 0;
     ship.thrusting = 0;
     ship.boosting = false;
-    // Station tractor holds the ship in its berth.
     ship.x += (0 - ship.x) * Math.min(1, dt * 3);
     ship.y += (60 - ship.y) * Math.min(1, dt * 3);
-    ship.angle = turnToward(ship.angle, -Math.PI / 2, dt * 4);
+    ship.angle = turnToward(ship.angle, Math.PI / 2, dt * 4);
     return;
   }
 
-  // Aim: rotate toward the cursor.
-  if (input.aimX !== undefined && !input.menuOpen) {
-    const target = angleTo(ship.x, ship.y, input.aimX, input.aimY);
-    ship.angle = turnToward(ship.angle, target, 11 * dt);
+  if (!input.menuOpen) {
+    if (input.turn !== undefined) ship.angle += (input.turn || 0) * TURN_RATE * dt + (input.turnDelta || 0);
+    else if (input.aimX !== undefined) ship.angle = turnToward(ship.angle, angleTo(ship.x, ship.y, input.aimX, input.aimY), 11 * dt);
   }
 
   let mx = input.menuOpen ? 0 : input.mx || 0;
@@ -45,13 +45,8 @@ export function updatePlayer(state, dt, input, stats) {
   const amount = Math.min(1, m);
   let thrust = stats.thrust;
   let maxSpeed = stats.maxSpeed;
-  const outOfFuel = ship.fuel <= 0;
-  if (outOfFuel) {
-    thrust *= 0.35;
-    maxSpeed *= 0.45;
-  }
   ship.boosting = false;
-  if (input.boost && amount > 0 && ship.boost > 0 && !outOfFuel) {
+  if (input.boost && amount > 0 && ship.boost > 0) {
     ship.boosting = true;
     ship.boost = Math.max(0, ship.boost - dt);
     thrust *= 1.9;
@@ -63,12 +58,7 @@ export function updatePlayer(state, dt, input, stats) {
   ship.vx += mx * thrust * dt;
   ship.vy += my * thrust * dt;
   ship.thrusting = amount;
-  if (amount > 0 && !outOfFuel) {
-    ship.fuel = Math.max(0, ship.fuel - amount * 0.9 * stats.fuelUse * (ship.boosting ? 3 : 1) * dt);
-    if (ship.fuel <= 0) emit(state, 'noFuel', {});
-  }
 
-  // Inertia: light drag while thrusting, stronger "space brakes" when idle.
   const drag = Math.exp(-(amount > 0 ? 0.6 : 1.4) * dt);
   ship.vx *= drag;
   ship.vy *= drag;
@@ -80,20 +70,13 @@ export function updatePlayer(state, dt, input, stats) {
   }
   ship.x += ship.vx * dt;
   ship.y += ship.vy * dt;
-  state.stats.distance += sp * dt;
 
-  // Sector edge: a gentle push back.
   const R = sectorDef(state).radius + 150;
   const d = len(ship.x, ship.y);
   if (d > R) {
     ship.vx -= (ship.x / d) * 400 * dt;
     ship.vy -= (ship.y / d) * 400 * dt;
-    if (!ship.edgeWarn || ship.edgeWarn <= 0) {
-      ship.edgeWarn = 4;
-      emit(state, 'edge', {});
-    }
   }
-  if (ship.edgeWarn > 0) ship.edgeWarn -= dt;
 
   collide(state, stats);
 }
@@ -111,7 +94,6 @@ function collide(state, stats) {
     const d = Math.sqrt(d2) || 1;
     const nx = dx / d;
     const ny = dy / d;
-    // Push out of the rock.
     ship.x = a.x + nx * rr;
     ship.y = a.y + ny * rr;
     const rel = (ship.vx - a.vx) * nx + (ship.vy - a.vy) * ny;
@@ -156,8 +138,8 @@ function shipDestroyed(state, stats) {
   ship.x = 0;
   ship.y = 120;
   ship.vx = ship.vy = 0;
-  ship.hull = stats.hullMax * 0.5;
+  ship.hull = stats.hullMax * 0.6;
   ship.shield = 0;
-  ship.fuel = Math.max(ship.fuel, stats.fuelMax * 0.5);
   ship.invuln = 3;
+  state.combo.count = 0;
 }

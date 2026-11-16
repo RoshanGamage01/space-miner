@@ -8,21 +8,19 @@ import { Renderer } from './render/Renderer.js';
 import { AudioManager } from './ui/AudioManager.js';
 import { UIManager } from './ui/UIManager.js';
 import { applyOffline, clearSave, loadGame, saveGame } from './systems/SaveManager.js';
-import { price } from './systems/EconomyManager.js';
 import { nearbyDerelict } from './systems/EventManager.js';
+import { WEAPON_IDS } from './core/config.js';
 import { cargoUsed } from './core/state.js';
 import { dist } from './core/math.js';
 
 const AUTOSAVE = 8; // seconds
-const IMPORTANT = new Set(['sold', 'upgrade', 'mission', 'levelUp', 'achievement', 'warp', 'research', 'droneDeployed', 'shipBought', 'sectorUnlocked', 'salvage', 'dock', 'undock', 'shipDestroyed']);
+const IMPORTANT = new Set(['sold', 'upgrade', 'mission', 'levelUp', 'achievement', 'warp', 'weaponBought', 'droneDeployed', 'shipBought', 'salvage', 'dock', 'undock', 'shipDestroyed', 'victory']);
 
 const canvas = document.getElementById('view');
 const root = document.getElementById('ui');
 
 const loaded = loadGame();
 const engine = new GameEngine(loaded?.state);
-// Small screens start with the side panels tucked away.
-if (!loaded && innerWidth < 820) engine.state.settings.leftOpen = engine.state.settings.rightOpen = false;
 const state = () => engine.state;
 const camera = new CameraController();
 const renderer = new Renderer(canvas, camera);
@@ -33,10 +31,18 @@ let resetting = false;
 const save = () => {
   if (!resetting) saveGame(engine.state);
 };
+let input;
+const toggleView = () => {
+  const st = engine.state.settings;
+  st.view = st.view === 'cockpit' ? 'top' : 'cockpit';
+  input?.setCockpit(st.view === 'cockpit');
+  save();
+};
 const ui = new UIManager({
   engine,
   audio,
   root,
+  onView: toggleView,
   onSave: save,
   onReset: () => {
     resetting = true;
@@ -44,7 +50,8 @@ const ui = new UIManager({
     location.reload();
   },
 });
-const input = new InputController(canvas, { onHotkey: (e) => ui.hotkey(e) });
+input = new InputController(canvas, { onHotkey: (e) => ui.hotkey(e) });
+input.setCockpit(engine.state.settings.view === 'cockpit');
 
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, () => audio.unlock(), { passive: true });
 addEventListener('resize', () => renderer.resize());
@@ -54,8 +61,6 @@ if (loaded) {
   const off = applyOffline(engine.state, (Date.now() - loaded.savedAt) / 1000);
   if (off && off.units > 0) ui.welcomeBack(off);
 }
-ui.showHelp();
-ui.openScreen('mining');
 
 // While the tab is hidden the loop stops; on return we credit the drones
 // with an elapsed-time estimate instead of running background timers.
@@ -78,24 +83,36 @@ let saveTimer = AUTOSAVE;
 let wantSave = false;
 
 function touchAim(inp) {
+  // Touch: shoot the nearest enemy in reach, otherwise mine the nearest rock.
   const s = engine.state;
   const st = engine.stats;
-  let best = null;
-  let bestD = st.laserRange + 10;
-  for (const a of s.asteroids) {
-    const d = dist(a.x, a.y, s.ship.x, s.ship.y) - a.r;
-    if (d < bestD) {
-      bestD = d;
-      best = a;
+  let enemy = null;
+  let ed = 300;
+  for (const e of s.enemies) {
+    const d = dist(e.x, e.y, s.ship.x, s.ship.y);
+    if (d < ed) {
+      ed = d;
+      enemy = e;
     }
   }
-  for (const p of s.pirates) {
-    const d = dist(p.x, p.y, s.ship.x, s.ship.y);
-    if (d < st.laserRange && d < bestD + 40) best = p;
+  if (enemy) {
+    inp.aimX = enemy.x;
+    inp.aimY = enemy.y;
+    inp.shoot = true;
+    return;
   }
-  if (best) {
-    inp.aimX = best.x;
-    inp.aimY = best.y;
+  let rock = null;
+  let rd = st.laserRange + 10;
+  for (const a of s.asteroids) {
+    const d = dist(a.x, a.y, s.ship.x, s.ship.y) - a.r;
+    if (d < rd) {
+      rd = d;
+      rock = a;
+    }
+  }
+  if (rock) {
+    inp.aimX = rock.x;
+    inp.aimY = rock.y;
     inp.fire = true;
   }
 }
@@ -103,7 +120,9 @@ function touchAim(inp) {
 const loop = new GameLoop({
   update(dt) {
     const s = state();
-    const inp = input.snapshot(toWorld, s.ship, ui.menuOpen);
+    const cockpit = s.settings.view === 'cockpit';
+    input.currentWeapon = s.weapon;
+    const inp = input.snapshot(toWorld, s.ship, ui.menuOpen, cockpit, WEAPON_IDS);
     if (inp.touchAim) touchAim(inp);
     engine.step(dt, inp);
     const fx = engine.drainFx();
@@ -123,7 +142,7 @@ const loop = new GameLoop({
       canDock: engine.canDock(),
       canSalvage: !!nearbyDerelict(s),
       cargoPct: cargoUsed(s.cargo) / engine.stats.cargoCap,
-      priceOf: (r) => price(s, r, engine.stats),
+      mode: s.settings.view,
     });
     ui.frame(dt);
     audio.update(s.ship);

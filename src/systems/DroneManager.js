@@ -10,7 +10,6 @@ import { applyDamage } from './MiningSystem.js';
 const MINE_GAP = 10;
 
 export function droneHome(state, d) {
-  if (d.mode === 'escort' && !d.forceStation && state.research.escort && !state.ship.docked) return { x: state.ship.x, y: state.ship.y, escort: true };
   return { x: 0, y: 0, escort: false };
 }
 
@@ -109,9 +108,8 @@ function updateDrone(state, d, dt, stats, claims) {
     const p = state.pickups[i];
     if (p.type === 'credits') continue;
     if (dist2(p.x, p.y, d.x, d.y) < 15 * 15) {
-      let want = p.qty;
-      for (let k = 0; k < p.qty; k++) if (Math.random() < stats.droneBonus) want++;
-      const add = addToBag(d.cargo, p.type, want, stats.droneCargo);
+      const want = p.qty;
+            const add = addToBag(d.cargo, p.type, want, stats.droneCargo);
       if (add <= 0) break;
       recordCollected(state, p.type, add);
       if (add >= p.qty) state.pickups.splice(i, 1);
@@ -195,17 +193,6 @@ function unload(state, d, home, stats) {
   }
 }
 
-export function setDroneMode(state, id, mode) {
-  const d = state.drones.find((x) => x.id === id);
-  if (!d) return { ok: false, reason: 'No such drone' };
-  if (mode === 'escort' && !state.research.escort) return { ok: false, reason: 'Research Escort Protocol first' };
-  if (mode !== 'escort' && mode !== 'station') return { ok: false, reason: 'Unknown mode' };
-  d.mode = mode;
-  d.task = d.load > 0 ? 'return' : 'idle';
-  d.target = 0;
-  return { ok: true };
-}
-
 export function droneStatus(d) {
   switch (d.task) {
     case 'mine':
@@ -230,7 +217,7 @@ export function droneRate(state, stats) {
   const travel = stats.droneRange * 0.55;
   const rocks = stats.droneCargo / avgYield;
   const cycle = (2 * travel) / stats.droneSpeed + (rocks * avgHp) / (stats.droneDps * 0.85) + rocks * 3;
-  const perDrone = (stats.droneCargo * (1 + stats.droneBonus * 0.5)) / cycle;
+  const perDrone = stats.droneCargo / cycle;
   // Mix of minerals the drones find near the station.
   const w = sec.bands[0].w;
   const w2 = sec.bands[1].w;

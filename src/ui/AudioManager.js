@@ -245,6 +245,42 @@ export class AudioManager {
         this.tone(660, 0, 0.12, 'triangle', 0.06);
         this.tone(440, 0.1, 0.18, 'triangle', 0.06);
         break;
+      case 'shoot': {
+        if (!this.throttle('shoot', 40)) return;
+        const w = data.weapon;
+        if (w === 'scatter') {
+          this.burst(0.12, 0.12, 2500, 'bandpass', 500);
+          this.tone(300, 0, 0.1, 'square', 0.05, this.sfx, 120);
+        } else if (w === 'missiles') {
+          this.burst(0.35, 0.1, 800, 'lowpass', 3000);
+          this.tone(200, 0, 0.3, 'sawtooth', 0.04, this.sfx, 500);
+        } else if (w === 'rail') {
+          this.tone(2400, 0, 0.25, 'sawtooth', 0.07, this.sfx, 200);
+          this.burst(0.3, 0.15, 6000, 'highpass');
+        } else {
+          this.tone(1200 + Math.random() * 100, 0, 0.07, 'square', 0.03, this.sfx, 500);
+        }
+        break;
+      }
+      case 'kill':
+        if (!this.throttle('kill', 50)) return;
+        this.burst(data.boss ? 2 : 0.35, data.boss ? 0.5 : 0.25, data.boss ? 900 : 2200, 'lowpass', 60);
+        this.tone(data.boss ? 60 : 140, 0, data.boss ? 1.5 : 0.25, 'sine', 0.25, this.sfx, 30);
+        if (data.combo >= 2) this.tone(600 + Math.min(10, data.combo) * 80, 0.05, 0.1, 'square', 0.04);
+        break;
+      case 'blast':
+        this.burst(0.4, 0.25, 1500, 'lowpass', 80);
+        break;
+      case 'enemyShot':
+        if (!this.throttle('eshot', 90)) return;
+        this.tone(data.boss ? 300 : 500, 0, 0.15, 'triangle', 0.03, this.sfx, 150);
+        break;
+      case 'alarm':
+        [0, 0.25].forEach((t) => this.tone(880, t, 0.18, 'square', 0.05, this.sfx, 600));
+        break;
+      case 'victory':
+        [0, 4, 7, 12, 16, 19, 24].forEach((s, i) => this.tone(392 * Math.pow(2, s / 12), i * 0.07, 0.3, 'square', 0.04));
+        break;
       case 'bump':
         if (!this.throttle('bump', 150)) return;
         this.tone(80, 0, 0.2, 'sine', 0.2, this.sfx, 50);
@@ -271,7 +307,6 @@ export class AudioManager {
         collect: 'collect',
         sold: 'sold',
         upgrade: 'upgrade',
-        research: 'upgrade',
         droneDeployed: 'upgrade',
         shipBought: 'levelUp',
         mission: 'mission',
@@ -280,18 +315,21 @@ export class AudioManager {
         achievement: 'achievement',
         hurt: 'hurt',
         pulse: 'pulse',
-        pirateShot: 'zap',
+        shoot: 'shoot',
+        kill: 'kill',
+        blast: 'blast',
+        enemyShot: 'enemyShot',
+        patrol: 'alarm',
+        wave: 'alarm',
+        victory: 'victory',
+        weaponBought: 'levelUp',
         eventStart: 'alert',
         warp: 'warp',
         dock: 'dock',
         undock: 'undock',
         bump: 'bump',
-        pirateDown: 'explode',
         shipDestroyed: 'explode',
         salvage: 'rare',
-        sectorUnlocked: 'achievement',
-        refuel: 'click',
-        repair: 'click',
         denied: 'deny',
       };
       if (map[e.type]) this.play(map[e.type], e);

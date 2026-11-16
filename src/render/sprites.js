@@ -100,6 +100,30 @@ const MAPS = {
     'kdhgggcck',
     'kdhggcwck',
   ],
+  swarmer: [
+    'k..k.....',
+    '.kgk.kk..',
+    '..kggggk.',
+    '.kdggccgk',
+    'kddgcwcgk',
+  ],
+  spitter: [
+    '...kk.......',
+    '..kddk..k...',
+    '.kddgkkkgk..',
+    'kddgggggggk.',
+    'kdgggcccggk.',
+    'kdggccwccggk',
+  ],
+  brute: [
+    '..kkk...........',
+    '.kdddk..kk......',
+    'kddhdkkkddkk....',
+    'kdhhddddhhddkk..',
+    'kdhhhgggggghhdk.',
+    'kddhhggcccgghhdk',
+    'eddhhgccwccgghdk',
+  ],
   derelict: [
     '..kk..............',
     '.kddk....k........',
@@ -115,6 +139,8 @@ const PALETTES = {
   player: { k: '#0d1029', h: '#7f8fc4', d: '#48548a', g: '#c9d6f5', c: '#3ee8ff', w: '#eafdff', o: '#ff8c42', e: '#2c3157' },
   pirate: { k: '#1a060c', h: '#b13a4f', d: '#621a2c', g: '#ec6a78', c: '#ffd23e', w: '#fff3b0', o: '#ffb02e', e: '#3a1520' },
   drone: { k: '#0b1424', h: '#5c7aa8', d: '#33476b', g: '#a9c3e8', c: '#56ffd0', w: '#e6fff7', o: '#ff8c42', e: '#2c3157' },
+  alien: { k: '#06140a', h: '#3d8f3a', d: '#1f4d24', g: '#7dff6a', c: '#ff4df0', w: '#ffd6fb', o: '#ffb02e', e: '#123018' },
+  brute: { k: '#0b0614', h: '#5a3a8f', d: '#2c1a4d', g: '#9b7dff', c: '#7dff6a', w: '#e6ffd6', o: '#ffb02e', e: '#1a1030' },
   derelict: { k: '#0c0d12', h: '#5b6070', d: '#353845', g: '#8b90a0', c: '#2b6b6f', w: '#9fd8d6', o: '#8a5a3a', e: '#1c1e26' },
 };
 
@@ -288,6 +314,45 @@ export function planetSprite(seed, r, colors, ringed) {
   return out;
 }
 
+// ------------------------------------------------------------ mothership
+export function mothershipSprite() {
+  if (spriteCache.has('mother')) return spriteCache.get('mother');
+  const size = 76;
+  const c = canvas(size, size);
+  const ctx = c.getContext('2d');
+  const cx = size / 2;
+  const cols = ['#140a24', '#2c1a4d', '#5a3a8f', '#9b7dff'];
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const dx = x + 0.5 - cx;
+      const dy = y + 0.5 - cx;
+      const d = Math.hypot(dx, dy);
+      const ang = Math.atan2(dy, dx);
+      const rr = 30 + Math.sin(ang * 8) * 4; // spiky hull
+      if (d > rr) continue;
+      if (d > rr - 1.2) {
+        ctx.fillStyle = '#05020a';
+      } else if (d < 9) {
+        ctx.fillStyle = d < 5 ? '#ffd6fb' : '#ff4df0';
+      } else {
+        const l = (-dx / rr) * 0.5 + (-dy / rr) * 0.5 + Math.sqrt(Math.max(0, 1 - (d / rr) ** 2)) * 0.5;
+        let lv = Math.max(0, Math.min(3, Math.floor(l * 3 + dither(x, y) * 0.9)));
+        if (Math.abs(d - 16) < 0.7 || Math.abs(Math.sin(ang * 4)) < 0.05) lv = 0;
+        ctx.fillStyle = cols[lv];
+      }
+      ctx.fillRect(x, y, 1, 1);
+    }
+  // Glowing pods.
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    ctx.fillStyle = '#7dff6a';
+    ctx.fillRect(Math.round(cx + Math.cos(a) * 22) - 1, Math.round(cx + Math.sin(a) * 22) - 1, 3, 3);
+  }
+  const out = { img: c, size, flash: silhouette(c, '#ffffff') };
+  spriteCache.set('mother', out);
+  return out;
+}
+
 // ------------------------------------------------------------ station hub
 export function stationHub() {
   if (spriteCache.has('hub')) return spriteCache.get('hub');
@@ -324,6 +389,33 @@ export function stationHub() {
   ctx.fillRect(cx - 2, cx - 2, 2, 2);
   const out = { img: c, size };
   spriteCache.set('hub', out);
+  return out;
+}
+
+// The whole station (arms, ring, hub) as one image, for the cockpit view.
+export function stationSprite() {
+  if (spriteCache.has('station')) return spriteCache.get('station');
+  const size = 112;
+  const c = canvas(size, size);
+  const ctx = c.getContext('2d');
+  const cx = size / 2;
+  for (let k = 0; k < 4; k++) {
+    const a = Math.PI / 4 + (k * Math.PI) / 2;
+    for (let d = 18; d < 54; d++) {
+      ctx.fillStyle = d > 34 ? (d % 3 === 0 ? '#1d2c5e' : '#2f56a8') : '#3b456e';
+      const w = d > 34 ? 3 : 1;
+      for (let o = -w; o <= w; o++) ctx.fillRect(Math.round(cx + Math.cos(a) * d - Math.sin(a) * o), Math.round(cx + Math.sin(a) * d + Math.cos(a) * o), 1, 1);
+    }
+  }
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2;
+    ctx.fillStyle = i % 7 === 0 ? '#ff8c42' : i % 2 ? '#56669e' : '#7f8fc4';
+    ctx.fillRect(Math.round(cx + Math.cos(a) * 30) - 1, Math.round(cx + Math.sin(a) * 30) - 1, 3, 3);
+  }
+  const hub = stationHub();
+  ctx.drawImage(hub.img, cx - hub.size / 2, cx - hub.size / 2);
+  const out = { img: c, size };
+  spriteCache.set('station', out);
   return out;
 }
 
