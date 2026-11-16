@@ -122,17 +122,77 @@ export class AudioManager {
     wind.connect(wf).connect(wg).connect(this.music);
     wind.start();
     f.connect(pad).connect(this.music);
-    // Sparse, gentle pings.
-    const ping = () => {
+    this.startMusic();
+  }
+
+  // ---------------------------------------------------------- music
+  // A 16-step sequencer in A minor (Am F C G). Layers come in with the
+  // action: 0 = drifting arpeggio, 1 = combat (bass, kick, hats),
+  // 2 = boss (faster, snare, lead).
+  setIntensity(n) {
+    this.intensity = n;
+  }
+
+  startMusic() {
+    this.step = 0;
+    this.intensity = 0;
+    this.nextT = this.ctx.currentTime + 0.2;
+    const tick = () => {
       if (!this.ctx) return;
-      if (this.settings.music && !this.settings.muted) {
-        const note = 440 * Math.pow(2, (PENTA[Math.floor(Math.random() * PENTA.length)] - 12) / 12);
-        this.tone(note, 0, 2.5, 'sine', 0.025, this.music);
-        if (Math.random() < 0.5) this.tone(note * 1.5, 0.4, 2, 'sine', 0.015, this.music);
+      const bpm = this.intensity === 2 ? 132 : this.intensity === 1 ? 112 : 84;
+      const dur = 60 / bpm / 4;
+      if (this.nextT < this.ctx.currentTime) this.nextT = this.ctx.currentTime + 0.05;
+      while (this.nextT < this.ctx.currentTime + 0.25) {
+        if (this.settings.music && !this.settings.muted && this.ctx.state === 'running') this.playStep(this.step, this.nextT - this.ctx.currentTime, dur);
+        this.nextT += dur;
+        this.step++;
       }
-      setTimeout(ping, 4000 + Math.random() * 7000);
+      setTimeout(tick, 70);
     };
-    setTimeout(ping, 3000);
+    tick();
+  }
+
+  noiseAt(start, dur, gain, freq, type) {
+    const c = this.ctx;
+    const t = c.currentTime + start;
+    const n = this.noise();
+    const f = c.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    const g = c.createGain();
+    g.gain.setValueAtTime(gain, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    n.connect(f).connect(g).connect(this.music);
+    n.start(t);
+    n.stop(t + dur + 0.05);
+  }
+
+  playStep(i, at, dur) {
+    const L = this.intensity;
+    const s = i % 16;
+    const chord = [[0, 3, 7], [-4, 0, 3], [3, 7, 10], [-2, 2, 5]][Math.floor(i / 16) % 4];
+    const hz = (semi, base = 220) => base * Math.pow(2, semi / 12);
+    // Arpeggio: always there, busier in combat.
+    if (s % (L ? 2 : 4) === 0) {
+      const n = chord[(s / (L ? 2 : 4)) % 3] + (s % 8 === 4 ? 12 : 0);
+      this.tone(hz(n, L === 2 ? 440 : 220), at, L ? dur * 2.2 : dur * 7, L ? 'triangle' : 'sine', L ? 0.045 : 0.05, this.music);
+    }
+    if (L === 0) {
+      if (s === 0) this.tone(hz(chord[0], 110), at, dur * 15, 'sine', 0.06, this.music);
+      return;
+    }
+    // Bass.
+    if ([0, 3, 6, 8, 11, 14].includes(s)) this.tone(hz(chord[0], 55), at, dur * 1.6, 'sawtooth', 0.09, this.music);
+    // Kick.
+    if (s % (L === 2 ? 4 : 8) === 0) this.tone(130, at, 0.16, 'sine', 0.3, this.music, 38);
+    // Hats.
+    if (L === 2 || s % 2 === 1) this.noiseAt(at, 0.04, s % 4 === 2 ? 0.05 : 0.025, 7000, 'highpass');
+    if (L === 2) {
+      // Snare and a lead riff.
+      if (s === 4 || s === 12) this.noiseAt(at, 0.16, 0.14, 1800, 'bandpass');
+      const riff = [0, null, 7, 5, null, 3, 5, null, 0, null, 10, 7, null, 5, 3, null][s];
+      if (riff !== null) this.tone(hz(riff, 440), at, dur * 1.4, 'square', 0.028, this.music);
+    }
   }
 
   tone(freq, start, dur, type = 'square', gain = 0.05, bus = this.sfx, slideTo) {
@@ -281,6 +341,21 @@ export class AudioManager {
       case 'victory':
         [0, 4, 7, 12, 16, 19, 24].forEach((s, i) => this.tone(392 * Math.pow(2, s / 12), i * 0.07, 0.3, 'square', 0.04));
         break;
+      case 'dash':
+        this.burst(0.25, 0.12, 600, 'bandpass', 4000);
+        break;
+      case 'powerup':
+        [0, 5, 12, 17].forEach((n, i) => this.tone(660 * Math.pow(2, n / 12), i * 0.05, 0.25, 'square', 0.05));
+        break;
+      case 'bossIntro':
+        this.tone(55, 0, 2.2, 'sawtooth', 0.22, this.sfx, 41);
+        this.tone(82, 0.1, 2, 'square', 0.08, this.sfx, 62);
+        this.burst(2, 0.12, 300, 'lowpass', 2000);
+        break;
+      case 'crit':
+        if (!this.throttle('crit', 60)) return;
+        this.tone(1800, 0, 0.08, 'square', 0.04, this.sfx, 2600);
+        break;
       case 'bump':
         if (!this.throttle('bump', 150)) return;
         this.tone(80, 0, 0.2, 'sine', 0.2, this.sfx, 50);
@@ -289,9 +364,14 @@ export class AudioManager {
   }
 
   // Called every frame with continuous state.
-  update(ship) {
+  update(ship, quiet) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
+    if (quiet) {
+      this.laserGain.gain.setTargetAtTime(0, t, 0.03);
+      this.engineGain.gain.setTargetAtTime(0, t, 0.05);
+      return;
+    }
     const laser = ship.laser ? (ship.laser.hit ? 0.06 : 0.035) : 0;
     this.laserGain.gain.setTargetAtTime(laser, t, 0.03);
     if (ship.laser) this.laserOsc.frequency.setTargetAtTime(ship.laser.hit ? 98 + Math.random() * 6 : 120, t, 0.05);
@@ -316,6 +396,13 @@ export class AudioManager {
         hurt: 'hurt',
         pulse: 'pulse',
         shoot: 'shoot',
+        dash: 'dash',
+        powerup: 'powerup',
+        bossIntro: 'bossIntro',
+        enrage: 'alarm',
+        sectorCleared: 'victory',
+        gameWon: 'victory',
+        perk: 'upgrade',
         kill: 'kill',
         blast: 'blast',
         enemyShot: 'enemyShot',
@@ -332,6 +419,8 @@ export class AudioManager {
         salvage: 'rare',
         denied: 'deny',
       };
+      if (e.type === 'enemyHit' && e.crit) this.play('crit');
+      if (e.type === 'hiveDown') this.play('kill', { boss: true });
       if (map[e.type]) this.play(map[e.type], e);
     }
   }

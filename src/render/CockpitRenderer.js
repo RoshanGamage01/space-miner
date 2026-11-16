@@ -2,9 +2,9 @@
 // the same 2D world; every object is projected onto the windshield with a
 // small per-object elevation, then the cockpit frame and dashboard are drawn
 // on top. Uses the main Renderer's canvas, particles and backdrop.
-import { RESOURCES, SECTORS, WEAPONS } from '../core/config.js';
+import { BOSSES, POWERUPS, RESOURCES, SECTORS, WEAPONS } from '../core/config.js';
 import { cargoUsed } from '../core/state.js';
-import { asteroidSprite, mapSprite, mothershipSprite, stationSprite } from './sprites.js';
+import { asteroidSprite, enemySprite, mapSprite, stationSprite } from './sprites.js';
 import { drawText } from './pixelfont.js';
 import { pixelLine } from './Renderer.js';
 
@@ -84,6 +84,7 @@ export class CockpitRenderer {
     this.drawDust(state, dt);
     this.drawWorld(state, stats, t);
     this.drawWeaponsFx(state, stats, t);
+    r.bloom(view);
     this.drawFrame(state, stats, t, view);
   }
 
@@ -147,21 +148,30 @@ export class CockpitRenderer {
         ctx.restore();
         if (o.special) this.bracket(p.x, p.y, size / 2 + 3, '#d66bff');
       } else if (it.kind === 'enemy') {
-        const boss = o.kind === 'mothership';
-        const spr = boss ? mothershipSprite() : mapSprite(o.kind, o.kind === 'pirate' ? 'pirate' : o.kind === 'brute' ? 'brute' : 'alien');
-        const w = (boss ? spr.size : spr.w) * p.k * 1.4;
-        const h = (boss ? spr.size * 0.55 : spr.h) * p.k * 1.4;
-        // Seen from behind/side: squash by relative facing.
+        const { spr, k } = enemySprite(o, BOSSES);
+        const big = o.kind === 'boss' || o.kind === 'hive';
+        const w = spr.w * k * p.k * (big ? 1.2 : 1.1);
+        const h = spr.h * k * p.k * (big ? 0.7 : 1.1);
+        if (w > this.W * 3) continue;
         ctx.save();
         ctx.translate(Math.round(p.x), Math.round(p.y));
-        if (!boss) ctx.rotate(Math.sin(t * 2 + o.id) * 0.15);
-        ctx.drawImage(o.hitT > 0 ? spr.flash : spr.img, -w / 2, -h / 2, w, h);
+        if (!big) ctx.rotate(Math.sin(t * 2 + o.id) * 0.15);
+        ctx.drawImage(o.hitT > 0 && Math.sin(t * 50) > 0 ? spr.flash : spr.img, -w / 2, -h / 2, w, h);
         ctx.restore();
         this.targets.push({ x: p.x, y: p.y, w, h, o });
+        if (o.aimT > 0) {
+          // Sniper lock-on warning.
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = o.aimT < 0.25 ? 1 : 0.4;
+          pixelLine(ctx, p.x, p.y, this.W / 2, this.H * 0.72, 1, o.aimT < 0.25 ? '#ffffff' : '#ff4df0');
+          ctx.globalCompositeOperation = 'source-over';
+        }
       } else if (it.kind === 'pickup') {
         if (p.z < 25) continue;
         const s = Math.max(1, Math.min(5, Math.round(4 * p.k)));
-        const col = o.type === 'credits' ? '#ffd23e' : RESOURCES[o.type].color;
+        const pow = o.type.startsWith('pow_');
+        const col = pow ? POWERUPS[o.type.slice(4)].color : o.type === 'credits' ? '#ffd23e' : RESOURCES[o.type].color;
+        if (pow) this.bracket(p.x, p.y, 5, col);
         ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = col;
         ctx.fillRect(Math.round(p.x - s), Math.round(p.y - s / 2), s * 2, s);
@@ -194,8 +204,8 @@ export class CockpitRenderer {
     ctx.globalCompositeOperation = 'lighter';
     for (const s of state.shots) {
       const p = this.project(s.x, s.y, s.team === 'enemy' ? 0 : -4);
-      if (!p || p.z > FAR) continue;
-      const size = Math.max(1, Math.min(8, Math.round((s.team === 'enemy' ? 5 : 3) * p.k)));
+      if (!p || p.z > FAR || (s.team !== 'enemy' && p.z < 40)) continue;
+      const size = Math.max(1, Math.min(s.team === 'enemy' ? 8 : 3, Math.round((s.team === 'enemy' ? 5 : 2) * p.k)));
       ctx.fillStyle = s.color;
       ctx.globalAlpha = 0.45;
       ctx.fillRect(Math.round(p.x - size), Math.round(p.y - size), size * 2, size * 2);
@@ -218,9 +228,9 @@ export class CockpitRenderer {
 
     // Target brackets on hostiles.
     for (const tg of this.targets) {
-      const col = tg.o.kind === 'pirate' ? '#ff8c42' : '#9dff4a';
+      const col = tg.o.kind === 'pirate' ? '#ff8c42' : tg.o.elite ? '#ffd23e' : tg.o.bossKey ? BOSSES[tg.o.bossKey].color : tg.o.kind === 'hive' ? '#ff4df0' : '#9dff4a';
       this.bracket(tg.x, tg.y, Math.max(4, Math.max(tg.w, tg.h) / 2 + 2), col);
-      if (tg.o.hp < tg.o.maxHp) {
+      if (tg.o.hp < tg.o.maxHp && tg.o.kind !== 'boss') {
         const w = Math.max(8, tg.w);
         ctx.fillStyle = '#05060f';
         ctx.fillRect(Math.round(tg.x - w / 2), Math.round(tg.y - tg.h / 2 - 5), Math.round(w), 2);
@@ -249,7 +259,7 @@ export class CockpitRenderer {
     const ship = state.ship;
     const gunL = { x: Math.round(W * 0.3), y: Math.round(H * 0.72) };
     const gunR = { x: Math.round(W * 0.7), y: Math.round(H * 0.72) };
-    if (ship.laser) {
+    if (ship.laser && !(ship.deadT > 0)) {
       const L = ship.laser;
       const tgt = L.hit ? state.asteroids.find((a) => a.id === L.targetId) || state.enemies.find((e) => e.id === L.targetId) : null;
       const e = tgt ? elev(tgt.id, tgt.kind ? 50 : 70) : 0;

@@ -1,7 +1,7 @@
 // PlayerController: ship flight model (thrust, inertia, boost), rotation
 // toward the aim point (or cockpit turning), collisions, hull and shield.
 import { emit, sectorDef } from '../core/state.js';
-import { RESOURCE_IDS } from '../core/config.js';
+import { DASH, RESOURCE_IDS } from '../core/config.js';
 import { angleTo, len, turnToward } from '../core/math.js';
 import { spawnPickup } from './ResourceManager.js';
 
@@ -11,6 +11,24 @@ export function updatePlayer(state, dt, input, stats) {
   const ship = state.ship;
   if (ship.pulseCd > 0) ship.pulseCd = Math.max(0, ship.pulseCd - dt);
   if (ship.invuln > 0) ship.invuln -= dt;
+  if (ship.dashCd > 0) ship.dashCd -= dt;
+
+  // Destroyed: a short beat, then the station tows you home.
+  if (ship.deadT > 0) {
+    ship.deadT -= dt;
+    ship.laser = null;
+    ship.thrusting = 0;
+    if (ship.deadT <= 0) {
+      ship.x = 0;
+      ship.y = 120;
+      ship.vx = ship.vy = 0;
+      ship.hull = stats.hullMax * 0.6;
+      ship.shield = stats.shieldMax;
+      ship.invuln = 3;
+      emit(state, 'respawn', {});
+    }
+    return;
+  }
 
   if (ship.shieldDelay > 0) ship.shieldDelay -= dt;
   else ship.shield = Math.min(stats.shieldMax, ship.shield + stats.shieldRegen * dt);
@@ -55,6 +73,20 @@ export function updatePlayer(state, dt, input, stats) {
     ship.boost = Math.min(stats.boostMax, ship.boost + stats.boostRegen * dt);
   }
 
+  // Dash: a burst of speed with a moment of invulnerability.
+  if (input.dash && ship.dashCd <= 0 && !input.menuOpen) {
+    const dx = amount > 0 ? mx : Math.cos(ship.angle);
+    const dy = amount > 0 ? my : Math.sin(ship.angle);
+    const n = len(dx, dy) || 1;
+    ship.vx = (dx / n) * DASH.impulse;
+    ship.vy = (dy / n) * DASH.impulse;
+    ship.dashCd = stats.dashCooldown;
+    ship.dashT = 0.22;
+    ship.invuln = Math.max(ship.invuln, DASH.invuln);
+    emit(state, 'dash', { x: ship.x, y: ship.y });
+  }
+  if (ship.dashT > 0) ship.dashT -= dt;
+
   ship.vx += mx * thrust * dt;
   ship.vy += my * thrust * dt;
   ship.thrusting = amount;
@@ -63,7 +95,7 @@ export function updatePlayer(state, dt, input, stats) {
   ship.vx *= drag;
   ship.vy *= drag;
   const sp = len(ship.vx, ship.vy);
-  if (sp > maxSpeed) {
+  if (sp > maxSpeed && !(ship.dashT > 0)) {
     const k = Math.max(maxSpeed / sp, Math.exp(-4 * dt));
     ship.vx *= k;
     ship.vy *= k;
@@ -114,18 +146,18 @@ function collide(state, stats) {
 
 export function damagePlayer(state, amount, stats) {
   const ship = state.ship;
-  if (amount <= 0 || ship.docked || ship.invuln > 0) return;
+  if (amount <= 0 || ship.docked || ship.invuln > 0 || ship.deadT > 0 || stats.barrier) return;
   ship.shieldDelay = stats.shieldDelay;
   const absorbed = Math.min(ship.shield, amount);
   ship.shield -= absorbed;
   const rest = amount - absorbed;
   if (rest > 0) ship.hull -= rest;
   emit(state, 'hurt', { amount, shield: absorbed > 0 && rest <= 0 });
-  if (ship.hull <= 0) shipDestroyed(state, stats);
+  if (ship.hull <= 0) shipDestroyed(state);
 }
 
 // Losing the ship spills half the hold into space and tows you home.
-function shipDestroyed(state, stats) {
+function shipDestroyed(state) {
   const ship = state.ship;
   for (const r of RESOURCE_IDS) {
     const lost = Math.floor(state.cargo[r] / 2);
@@ -135,11 +167,11 @@ function shipDestroyed(state, stats) {
     }
   }
   emit(state, 'shipDestroyed', { x: ship.x, y: ship.y });
-  ship.x = 0;
-  ship.y = 120;
-  ship.vx = ship.vy = 0;
-  ship.hull = stats.hullMax * 0.6;
+  ship.hull = 0;
   ship.shield = 0;
-  ship.invuln = 3;
+  ship.vx = ship.vy = 0;
+  ship.deadT = 2.4;
+  state.stats.deaths++;
   state.combo.count = 0;
+  state.powerups = {};
 }

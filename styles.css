@@ -98,7 +98,7 @@ kbd {
 
 #combo {
   position: absolute;
-  top: 92px;
+  top: 150px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 22px;
@@ -363,6 +363,117 @@ kbd {
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid var(--line); }
 
+/* ---------------------------------------------------------- campaign HUD */
+.objective {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: #f0c8ff;
+  text-shadow: 0 1px 0 #000;
+  white-space: nowrap;
+}
+.objective b { color: #ff4df0; }
+.bossbar { width: min(520px, 80vw); text-align: center; pointer-events: none; }
+.bossbar b { display: block; letter-spacing: 4px; font-size: 13px; text-shadow: 0 0 10px currentColor, 0 1px 0 #000; }
+.bossbar .boss { height: 8px; margin-top: 3px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.5); }
+.bossbar .boss.rage { animation: blink 0.4s steps(2) infinite; }
+.pows { display: flex; flex-wrap: wrap; gap: 4px; }
+.pows span { padding: 2px 8px; font-size: 11px; font-weight: bold; color: #05060f; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.slot.dash { border-color: rgba(255, 140, 66, 0.5); margin-left: 6px; }
+.slot.dash + .slot.pulse { margin-left: 0; }
+
+#letterbox i { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height 0.5s; z-index: 12; }
+#letterbox i:first-child { top: 0; }
+#letterbox i:last-child { bottom: 0; }
+.cinema #letterbox i { height: 11%; }
+.cinema #top, .cinema #status, .cinema #nav, .cinema #radar-wrap, .cinema #hints, .cinema #combo { opacity: 0; transition: opacity 0.3s; }
+#banner.boss-card b { font-size: clamp(34px, 7vw, 76px); letter-spacing: 10px; animation: slam 0.5s cubic-bezier(0.2, 1.4, 0.3, 1); }
+#banner.boss-card small { font-size: 16px; letter-spacing: 3px; }
+#banner .warn { color: var(--red); letter-spacing: 8px; animation: blink 0.4s steps(2) infinite; margin-bottom: 6px; }
+@keyframes slam { from { transform: scale(2.4); opacity: 0; } }
+.dead #view { filter: grayscale(0.8) brightness(0.7); transition: filter 0.4s; }
+
+/* ---------------------------------------------------------- perks */
+#modal.perk-modal { background: rgba(2, 3, 10, 0.75); }
+.perk-modal .card-modal { width: min(760px, calc(100% - 24px)); background: transparent; border: 0; align-items: center; }
+.perk-title { justify-content: center; color: var(--yellow) !important; letter-spacing: 4px !important; text-shadow: 0 0 16px rgba(255, 210, 62, 0.6); }
+.perks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; }
+.perk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 12px 16px;
+  background: linear-gradient(180deg, rgba(26, 34, 70, 0.95), rgba(10, 14, 32, 0.95));
+  border: 1px solid var(--c);
+  border-top-width: 3px;
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  transition: transform 0.15s, box-shadow 0.15s;
+  animation: rise 0.35s backwards;
+}
+.perk:nth-child(2) { animation-delay: 0.08s; }
+.perk:nth-child(3) { animation-delay: 0.16s; }
+@keyframes rise { from { transform: translateY(30px); opacity: 0; } }
+.perk:hover { transform: translateY(-6px); box-shadow: 0 10px 40px color-mix(in srgb, var(--c) 45%, transparent); }
+.perk h3 { font-size: 15px; color: var(--c); }
+.perk p { color: var(--text); font-size: 12px; text-align: center; min-height: 32px; }
+.perk kbd { position: absolute; top: 6px; left: 8px; }
+.perk-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 18px; }
+.stats span { display: flex; justify-content: space-between; color: var(--muted); border-bottom: 1px dashed var(--line); padding: 3px 0; }
+.stats b { color: var(--text); }
+.cleared { color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.sector .muted { font-size: 11px; }
+
+/* ---------------------------------------------------------- title */
+#title {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(5, 6, 15, 0.35), rgba(5, 6, 15, 0.92) 75%);
+  z-index: 40;
+  text-align: center;
+}
+.on-title #title { display: flex; }
+.on-title > :not(#title) { visibility: hidden; }
+.logo { display: flex; flex-direction: column; line-height: 0.95; font-weight: 900; letter-spacing: 0.12em; }
+.logo span:first-child {
+  font-size: clamp(48px, 11vw, 132px);
+  color: #eaffff;
+  text-shadow: 0 0 30px rgba(94, 241, 255, 0.9), 0 0 80px rgba(94, 241, 255, 0.5), 0 6px 0 #0b4a5c;
+  animation: flicker 4s infinite;
+}
+.logo span:last-child {
+  font-size: clamp(36px, 8vw, 96px);
+  color: var(--yellow);
+  text-shadow: 0 0 30px rgba(255, 140, 66, 0.9), 0 5px 0 #7a2f17;
+}
+@keyframes flicker { 0%, 93%, 96%, 100% { opacity: 1; } 94.5% { opacity: 0.6; } }
+.tag-line { color: #b9c6ee; letter-spacing: 3px; font-size: 14px; }
+.title-buttons { display: flex; flex-direction: column; gap: 8px; min-width: 280px; margin-top: 10px; }
+.tbtn {
+  padding: 12px 18px;
+  font-size: 15px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  background: rgba(94, 241, 255, 0.06);
+  border: 1px solid var(--line);
+  color: var(--text);
+  transition: transform 0.12s, background 0.12s;
+}
+.tbtn small { display: block; font-size: 10px; letter-spacing: 1px; opacity: 0.75; text-transform: none; margin-top: 2px; }
+.tbtn:hover { transform: scale(1.04); background: rgba(94, 241, 255, 0.14); }
+.tbtn.main { background: linear-gradient(180deg, #7dffb0, #33d17a); color: #05060f; border-color: #b5ffd2; font-weight: bold; box-shadow: 0 0 30px rgba(125, 255, 176, 0.4); animation: breathe 2s ease-in-out infinite; }
+@keyframes breathe { 50% { box-shadow: 0 0 10px rgba(125, 255, 176, 0.2); } }
+.title-keys { margin-top: 14px; color: var(--muted); font-size: 12px; }
+
 /* ---------------------------------------------------------- small screens */
 @media (max-width: 760px) {
   #top { flex-wrap: wrap; }
@@ -377,6 +488,10 @@ kbd {
   #combo { top: 110px; }
   #hints { display: none !important; }
   .card.wide { grid-column: 1 / -1; }
+  .perks { grid-template-columns: 1fr; }
+  .perk { padding: 12px; }
+  .perk p { min-height: 0; }
+  .title-keys { display: none; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tabs { overflow-x: auto; }
   .tabs button { flex: none; }

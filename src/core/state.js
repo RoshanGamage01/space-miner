@@ -31,12 +31,23 @@ export function createState() {
       docked: false,
       invuln: 0,
       cargoFullWarn: 0,
+      dashCd: 0,
+      deadT: 0,
     },
     cargo: zeroRes(),
     storage: zeroRes(),
     upgrades: Object.fromEntries(UPGRADE_IDS.map((u) => [u, 0])),
     weapons: { blaster: 1 }, // id -> level (owned when >= 1)
     weapon: 'blaster',
+    perks: {}, // id -> stacks
+    pendingPerks: 0,
+    perkChoices: null,
+    powerups: {}, // id -> seconds left
+    wingmen: [],
+    progress: {}, // sector -> { hives, boss }
+    bossId: 0,
+    bossTimer: 0,
+    won: false,
     drones: [],
     sector: 'kepler',
     unlockedSectors: ['kepler'],
@@ -60,6 +71,10 @@ export function createState() {
       aliens: 0,
       kills: 0,
       bosses: 0,
+      hives: 0,
+      queen: 0,
+      deaths: 0,
+      elites: 0,
       pirates: 0,
       events: 0,
       bestCombo: 0,
@@ -73,7 +88,7 @@ export function createState() {
     nextPatrolAt: 0,
     turretCd: 0,
     respawnTimer: 0,
-    settings: { volume: 0.6, muted: false, music: true, view: 'top', hints: true },
+    settings: { volume: 0.6, muted: false, music: true, view: 'top', hints: true, glow: true },
     nextId: 1,
     fx: [],
   };
@@ -105,7 +120,9 @@ export const upgradeCost = (def, level) => Math.round(def.base * Math.pow(def.gr
 export function getStats(state) {
   const u = state.upgrades;
   const ship = SHIPS[state.shipId] || SHIPS.sparrow;
-  const surge = state.event?.id === 'anomaly' ? 2 : 1;
+  const pk = state.perks;
+  const pw = state.powerups;
+  const surge = (state.event?.id === 'anomaly' ? 2 : 1) * (pw.quad > 0 ? 3 : 1);
   const w = WEAPONS[state.weapon] ? state.weapon : 'blaster';
   const wl = state.weapons[w] || 1;
   const wd = WEAPONS[w];
@@ -120,13 +137,13 @@ export function getStats(state) {
     thrust: 300 * (1 + 0.1 * u.engine),
     boostMax: 2 + 0.4 * u.engine,
     boostRegen: 0.4 + 0.05 * u.engine,
-    hullMax: Math.round(100 * (1 + 0.25 * u.armor) * ship.hull),
+    hullMax: Math.round(100 * (1 + 0.25 * u.armor) * ship.hull) + 25 * (pk.plating || 0),
     collisionMult: Math.pow(0.9, u.armor),
     shieldMax: 40 + 20 * u.shield + ship.shield,
     shieldRegen: 5 + 2 * u.shield,
     shieldDelay: Math.max(1.2, 3 - 0.15 * u.shield),
     cargoCap: Math.round((START.cargo + 50 * u.cargo) * ship.cargo),
-    magnetRadius: 40 + 10 * u.cargo,
+    magnetRadius: (40 + 10 * u.cargo) * (1 + 0.5 * (pk.magnet || 0)) * (pw.magnet > 0 ? 8 : 1),
     droneDps: 6 * (1 + 0.3 * u.drones) * surge,
     droneRange: 350 + 60 * u.drones,
     droneCargo: 8 + 4 * u.drones,
@@ -137,9 +154,20 @@ export function getStats(state) {
       id: w,
       level: wl,
       ...wd,
-      dmg: wd.dmg * (1 + 0.3 * (wl - 1)) * ship.guns * surge,
-      rate: wd.rate * (1 + 0.08 * (wl - 1)),
+      dmg: wd.dmg * (1 + 0.3 * (wl - 1)) * ship.guns * surge * (1 + 0.15 * (pk.power || 0)),
+      rate: wd.rate * (1 + 0.08 * (wl - 1)) * (1 + 0.15 * (pk.rapid || 0)) * (pw.overdrive > 0 ? 2 : 1),
+      count: wd.count + (pk.multishot || 0),
     },
+    crit: 0.1 * (pk.crit || 0),
+    ricochet: pk.ricochet || 0,
+    killBlast: pk.blast || 0,
+    vampire: 3 * (pk.vampire || 0),
+    wingmen: pk.wingman || 0,
+    chain: pk.chain || 0,
+    greed: 1 + 0.2 * (pk.greed || 0),
+    dashCooldown: 1.4 * Math.pow(0.75, pk.dash || 0),
+    pulseCooldown: 18 * Math.pow(0.8, pk.nova || 0),
+    barrier: pw.barrier > 0,
     gunMult: ship.guns * surge,
     shipRadius: ship.radius,
   };

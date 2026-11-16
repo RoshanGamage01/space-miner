@@ -22,7 +22,7 @@ export function applyDamage(state, a, raw, resistMult, by = 'player') {
 export function updateLaser(state, dt, input, stats) {
   const ship = state.ship;
   if (ship.overheat && ship.energy >= stats.energyMax * 0.3) ship.overheat = false;
-  const firing = input.fire && !ship.docked && !ship.overheat && !input.menuOpen;
+  const firing = input.fire && !ship.docked && !(ship.deadT > 0) && !ship.overheat && !input.menuOpen;
   if (!firing) {
     ship.laser = null;
     ship.energy = Math.min(stats.energyMax, ship.energy + stats.energyRegen * dt);
@@ -57,15 +57,48 @@ export function updateLaser(state, dt, input, stats) {
     target = null;
   }
   ship.laser = { x0: ox, y0: oy, x1: ox + dx * best, y1: oy + dy * best, hit: !!(target || hitE.target), kind: hitE.target ? 'enemy' : 'rock', type: target?.type, targetId: (target || hitE.target)?.id };
+  const hit = target || hitE.target;
   if (target) applyDamage(state, target, stats.laserDps * dt, stats.resistMult, 'player');
   else if (hitE.target) damageEnemy(state, hitE.target, stats.laserDps * dt * 0.6);
+  // Chain Laser perk: arcs jump to nearby targets.
+  ship.laser.arcs = [];
+  if (hit && stats.chain) {
+    let from = { x: ship.laser.x1, y: ship.laser.y1 };
+    const used = [hit.id];
+    for (let k = 0; k < stats.chain; k++) {
+      let next = null;
+      let bd = 110;
+      for (const o of state.enemies) {
+        const d = dist(o.x, o.y, from.x, from.y);
+        if (d < bd && !used.includes(o.id)) {
+          bd = d;
+          next = o;
+        }
+      }
+      if (!next) {
+        for (const o of state.asteroids) {
+          const d = dist(o.x, o.y, from.x, from.y) - o.r;
+          if (d < bd && d < 70 && !used.includes(o.id)) {
+            bd = d;
+            next = o;
+          }
+        }
+      }
+      if (!next) break;
+      used.push(next.id);
+      ship.laser.arcs.push({ x0: from.x, y0: from.y, x1: next.x, y1: next.y });
+      if (next.kind) damageEnemy(state, next, stats.laserDps * dt * 0.5);
+      else applyDamage(state, next, stats.laserDps * dt * 0.6, stats.resistMult, 'player');
+      from = next;
+    }
+  }
 }
 
 export function usePulse(state, stats) {
   const ship = state.ship;
-  if (ship.docked) return { ok: false, reason: 'Undock first' };
+  if (ship.docked || ship.deadT > 0) return { ok: false, reason: 'Not now' };
   if (ship.pulseCd > 0) return { ok: false, reason: `Shockwave in ${Math.ceil(ship.pulseCd)}s` };
-  ship.pulseCd = 18;
+  ship.pulseCd = stats.pulseCooldown;
   const R = 150;
   const dmg = stats.laserDps * 3 + 60 * stats.gunMult;
   emit(state, 'pulse', { x: ship.x, y: ship.y, r: R });

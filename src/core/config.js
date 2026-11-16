@@ -1,6 +1,6 @@
 // All balance numbers and content definitions live here.
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const SIM_STEP = 1 / 60;
 
 export const START = { credits: 1000, cargo: 100, drones: 1 };
@@ -139,12 +139,60 @@ export const weaponUpgradeCost = (id, level) => Math.round(Math.max(300, WEAPONS
 
 // ---------------------------------------------------------------- enemies
 export const ENEMIES = {
-  swarmer: { name: 'Swarmer', hp: 22, speed: 175, accel: 420, r: 6, touch: 12, credits: 15, xp: 6, alien: true },
-  spitter: { name: 'Spitter', hp: 50, speed: 120, accel: 220, r: 8, keep: 190, fire: 1.7, shot: 8, shotSpeed: 170, credits: 30, xp: 12, alien: true },
-  brute: { name: 'Brute', hp: 180, speed: 70, accel: 120, r: 12, keep: 150, fire: 2.4, shot: 10, shotSpeed: 150, spread: 3, credits: 80, xp: 30, alien: true },
+  swarmer: { name: 'Swarmer', hp: 22, speed: 175, accel: 420, r: 6, touch: 12, credits: 15, xp: 6, alien: true, minLevel: 1, weight: 5 },
+  spitter: { name: 'Spitter', hp: 50, speed: 120, accel: 220, r: 8, keep: 190, fire: 1.7, shot: 8, shotSpeed: 170, credits: 30, xp: 12, alien: true, minLevel: 2, weight: 3 },
+  bomber: { name: 'Bomber', hp: 30, speed: 150, accel: 300, r: 7, blast: 55, blastDmg: 26, credits: 25, xp: 10, alien: true, minLevel: 3, weight: 2 },
+  brute: { name: 'Brute', hp: 180, speed: 70, accel: 120, r: 12, keep: 150, fire: 2.4, shot: 10, shotSpeed: 150, spread: 3, credits: 80, xp: 30, alien: true, minLevel: 5, weight: 1.2 },
+  sniper: { name: 'Sniper', hp: 40, speed: 90, accel: 160, r: 7, keep: 330, fire: 3.4, aim: 0.9, shot: 20, shotSpeed: 700, credits: 45, xp: 18, alien: true, minLevel: 6, weight: 1.2 },
+  guardian: { name: 'Guardian', hp: 110, shield: 80, speed: 95, accel: 180, r: 10, keep: 160, fire: 1.5, shot: 9, shotSpeed: 190, credits: 70, xp: 28, alien: true, minLevel: 8, weight: 1 },
   pirate: { name: 'Pirate', hp: 60, speed: 130, accel: 200, r: 8, keep: 130, fire: 1.8, shot: 7, shotSpeed: 230, credits: 60, xp: 20, steals: true },
-  mothership: { name: 'Mothership', hp: 1600, speed: 38, accel: 40, r: 34, keep: 220, fire: 3, shot: 9, shotSpeed: 140, ring: 14, spawn: 7, credits: 1500, xp: 400, alien: true, boss: true },
+  hive: { name: 'Hive', hp: 700, speed: 0, accel: 0, r: 30, fire: 4.5, shot: 8, shotSpeed: 120, ring: 10, spawn: 8, credits: 500, xp: 150, alien: true, structure: true },
+  boss: { name: 'Boss', hp: 1600, speed: 40, accel: 50, r: 34, keep: 230, shot: 9, shotSpeed: 140, credits: 2000, xp: 500, alien: true, boss: true },
 };
+export const ELITE = { chance: 0.08, minLevel: 3, hp: 3, dmg: 1.5, size: 1.3, credits: 4 };
+export const HIVES_PER_SECTOR = 3;
+
+// One boss per sector. Patterns cycle; below 50% hull it enrages.
+export const BOSSES = {
+  kepler: { name: 'BROOD MOTHER', title: 'Guardian of the Kepler Belt', hp: 1500, r: 34, speed: 40, patterns: ['ring', 'spawn'], color: '#ff4df0', hue: ['#140a24', '#2c1a4d', '#5a3a8f', '#9b7dff'], spikes: 8, minion: 'swarmer' },
+  cobalt: { name: 'STORM REAPER', title: 'Scourge of Cobalt Drift', hp: 3600, r: 36, speed: 70, patterns: ['spiral', 'burst', 'spawn'], color: '#4fd8ff', hue: ['#06202a', '#0f4a5c', '#1f8fa8', '#7ff0ff'], spikes: 5, minion: 'bomber' },
+  ember: { name: 'EMBER TITAN', title: 'Warlord of the Ember Front', hp: 7500, r: 42, speed: 35, patterns: ['ring', 'burst', 'spiral', 'spawn'], color: '#ff8c42', hue: ['#2a0c06', '#6b2413', '#c2511f', '#ffb347'], spikes: 12, minion: 'spitter' },
+  void: { name: 'HIVE QUEEN', title: 'Mother of the Swarm', hp: 15000, r: 48, speed: 45, patterns: ['spiral', 'ring', 'burst', 'cross', 'spawn'], color: '#9dff4a', hue: ['#081a06', '#1f4d1a', '#3d8f3a', '#b6ff6a'], spikes: 16, minion: 'guardian', final: true },
+};
+
+// ---------------------------------------------------------------- power-ups
+export const POWERUPS = {
+  overdrive: { name: 'Overdrive', color: '#ffd23e', time: 10, desc: 'Fire rate x2' },
+  quad: { name: 'Quad Damage', color: '#ff4df0', time: 8, desc: 'Damage x3' },
+  barrier: { name: 'Barrier', color: '#7aa8ff', time: 6, desc: 'Invulnerable' },
+  magnet: { name: 'Magnet', color: '#7dffb0', time: 15, desc: 'Pulls all loot' },
+  repair: { name: 'Repair', color: '#ff6a6a', time: 0, desc: 'Hull +50%' },
+  nuke: { name: 'Nuke', color: '#ffffff', time: 0, desc: 'Clears the screen' },
+};
+export const POWERUP_IDS = Object.keys(POWERUPS);
+export const POWERUP_DROP = 0.06;
+
+// ---------------------------------------------------------------- perks
+// Pick one of three on every level-up. They stack up to `max`.
+export const PERKS = {
+  rapid: { name: 'Rapid Fire', desc: '+15% fire rate', max: 5, icon: 'blaster', color: '#5ef1ff' },
+  power: { name: 'Heavy Rounds', desc: '+15% weapon damage', max: 5, icon: 'rail', color: '#ff5ef1' },
+  crit: { name: 'Critical Hits', desc: '+10% chance to hit for x2.5', max: 5, icon: 'star', color: '#ffd23e' },
+  multishot: { name: 'Twin Barrels', desc: '+1 shot per volley', max: 2, icon: 'scatter', color: '#ff8c42' },
+  ricochet: { name: 'Ricochet', desc: 'Shots bounce to another enemy', max: 2, icon: 'pulse', color: '#7dffb0' },
+  blast: { name: 'Volatile Kills', desc: 'Enemies explode when they die', max: 3, icon: 'missiles', color: '#ffb347' },
+  vampire: { name: 'Salvage Nanites', desc: 'Kills repair 3 hull', max: 3, icon: 'hull', color: '#ff6a6a' },
+  wingman: { name: 'Wingman', desc: '+1 gun drone that fights with you', max: 3, icon: 'drone', color: '#7dffb0' },
+  chain: { name: 'Chain Laser', desc: 'Mining laser arcs to a nearby target', max: 3, icon: 'laser', color: '#5ef1ff' },
+  magnet: { name: 'Tractor Field', desc: '+50% pickup range', max: 3, icon: 'cargo', color: '#ffd23e' },
+  greed: { name: 'Bounty Hunter', desc: '+20% credits from kills', max: 3, icon: 'credits', color: '#ffd23e' },
+  plating: { name: 'Hull Plating', desc: '+25 max hull', max: 5, icon: 'shield', color: '#7aa8ff' },
+  dash: { name: 'Afterburner', desc: 'Dash recharges 25% faster', max: 2, icon: 'engine', color: '#ff8c42' },
+  nova: { name: 'Nova Core', desc: 'Shockwave recharges 20% faster', max: 3, icon: 'pulse', color: '#b99bff' },
+};
+export const PERK_IDS = Object.keys(PERKS);
+export const DASH = { cooldown: 1.4, impulse: 430, invuln: 0.3 };
+
 export const STATION_TURRET = { range: 260, rate: 2.2, dmg: 30 };
 export const COMBO_WINDOW = 4;
 
@@ -158,7 +206,6 @@ export const MARKET = { interval: 15, min: 0.7, max: 1.45, history: 12 };
 
 export const EVENTS = {
   invasion: { name: 'Alien Invasion', duration: 80, weight: 3, minLevel: 2, color: '#7dff6a', desc: 'Survive 3 waves' },
-  mothership: { name: 'Mothership', duration: 150, weight: 1.5, minLevel: 5, color: '#ff4d6d', desc: 'Boss inbound!' },
   pirates: { name: 'Pirate Raid', duration: 60, weight: 2, minLevel: 3, color: '#ff8c42', desc: 'They want your cargo' },
   meteors: { name: 'Meteor Shower', duration: 25, weight: 2, minLevel: 1, color: '#ffb347', desc: 'Free ore, watch your hull' },
   rare: { name: 'Crystal Motherlode', duration: 90, weight: 2, minLevel: 1, color: '#d66bff', desc: 'Follow the purple arrow' },
@@ -176,7 +223,9 @@ export const ACHIEVEMENTS = {
   firstTrip: { name: 'First Haul', desc: 'Sell your first cargo', stat: 'sales', goal: 1, credits: 200 },
   firstBlood: { name: 'First Contact', desc: 'Destroy an alien', stat: 'aliens', goal: 1, credits: 200 },
   alienHunter: { name: 'Alien Hunter', desc: 'Destroy 100 aliens', stat: 'aliens', goal: 100, credits: 3000 },
-  bossSlayer: { name: 'Mothership Down', desc: 'Destroy a mothership', stat: 'bosses', goal: 1, credits: 5000 },
+  bossSlayer: { name: 'Boss Slayer', desc: 'Defeat a sector boss', stat: 'bosses', goal: 1, credits: 3000 },
+  hiveBreaker: { name: 'Hive Breaker', desc: 'Destroy 6 hives', stat: 'hives', goal: 6, credits: 4000 },
+  savior: { name: 'Savior of the Galaxy', desc: 'Defeat the Hive Queen', stat: 'queen', goal: 1, credits: 100000 },
   destroyer: { name: 'Rock Breaker', desc: 'Destroy 200 asteroids', stat: 'asteroids', goal: 200, credits: 2000 },
   arsenal: { name: 'Arsenal', desc: 'Own all 4 weapons', stat: 'weapons', goal: 4, credits: 10000 },
   fleet: { name: 'Drone Fleet', desc: 'Own 5 drones', stat: 'drones', goal: 5, credits: 4000 },

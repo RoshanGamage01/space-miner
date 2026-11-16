@@ -3,6 +3,7 @@
 import { RESOURCES, RESOURCE_IDS } from '../core/config.js';
 import { cargoUsed, emit } from '../core/state.js';
 import { TAU, dist2, rand } from '../core/math.js';
+import { applyPowerup } from './CombatSystem.js';
 
 const PICKUP_LIFE = 75;
 const MAX_PICKUPS = 260;
@@ -83,15 +84,21 @@ export function updatePickups(state, dt, stats) {
     p.vy *= drag;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    if (ship.docked) continue;
+    if (ship.docked || ship.deadT > 0) continue;
     const d2 = dist2(p.x, p.y, ship.x, ship.y);
-    const isCredits = p.type === 'credits';
+    const isPow = p.type.startsWith('pow_');
+    const isCredits = p.type === 'credits' || isPow;
     if (d2 < mag * mag && (space > 0 || isCredits)) {
       const d = Math.sqrt(d2) || 1;
       const pull = 420 * (1 - d / mag) + 60;
       p.vx += ((ship.x - p.x) / d) * pull * dt;
       p.vy += ((ship.y - p.y) / d) * pull * dt;
       if (d < grab) {
+        if (isPow) {
+          applyPowerup(state, p.type.slice(4));
+          list.splice(i, 1);
+          continue;
+        }
         if (isCredits) {
           state.credits += p.qty;
           state.stats.earned += p.qty;

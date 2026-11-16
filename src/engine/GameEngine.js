@@ -11,25 +11,30 @@ import { updatePickups } from '../systems/ResourceManager.js';
 import { updateDrones } from '../systems/DroneManager.js';
 import { sell, updateMarket } from '../systems/EconomyManager.js';
 import { updateCombat } from '../systems/CombatSystem.js';
-import { buyDrone, buyShip, buyUpgrade, buyWeapon, equipWeapon, switchShip, travel } from '../systems/UpgradeManager.js';
+import { buyDrone, buyShip, buyUpgrade, buyWeapon, ensurePerkChoices, equipWeapon, pickPerk, switchShip, travel } from '../systems/UpgradeManager.js';
+import { setupSector, updateCampaign } from '../systems/CampaignSystem.js';
 import { ensureMissions, updateMissions } from '../systems/MissionManager.js';
 import { updateAchievements } from '../systems/AchievementManager.js';
 import { nearbyDerelict, salvage, startEvent, updateEvents } from '../systems/EventManager.js';
 
-export const EMPTY_INPUT = Object.freeze({ mx: 0, my: 0, fire: false, shoot: false, boost: false, interact: false, ability: false, menuOpen: false });
+export const EMPTY_INPUT = Object.freeze({ mx: 0, my: 0, fire: false, shoot: false, boost: false, dash: false, interact: false, ability: false, menuOpen: false });
 
 export class GameEngine {
   constructor(state) {
     this.state = state || createState();
     this.slowTimer = 0;
-    if (!this.state.asteroids.length) generateSector(this.state);
+    if (!this.state.asteroids.length) {
+      generateSector(this.state);
+      setupSector(this.state);
+    }
+    ensurePerkChoices(this.state);
     ensureMissions(this.state);
     this.stats = getStats(this.state);
   }
 
   canDock() {
     const s = this.state.ship;
-    return !s.docked && dist(s.x, s.y, 0, 0) < STATION.dockRadius;
+    return !s.docked && !(s.deadT > 0) && dist(s.x, s.y, 0, 0) < STATION.dockRadius;
   }
 
   step(dt = SIM_STEP, input = EMPTY_INPUT) {
@@ -52,6 +57,7 @@ export class GameEngine {
     updatePickups(state, dt, stats);
     updateDrones(state, dt, stats);
     updateEvents(state, dt);
+    updateCampaign(state, dt);
     updateMarket(state, dt);
 
     this.slowTimer -= dt;
@@ -59,6 +65,7 @@ export class GameEngine {
       this.slowTimer = 0.25;
       updateMissions(state);
       updateAchievements(state);
+      ensurePerkChoices(state);
     }
   }
 
@@ -103,6 +110,7 @@ export class GameEngine {
       buyShip: (id) => buyShip(state, id),
       switchShip: (id) => switchShip(state, id),
       travel: (id) => travel(state, id),
+      perk: (id) => pickPerk(state, id),
       dock: () => this.dock(),
       undock: () => this.undock(),
       pulse: () => usePulse(state, getStats(state)),

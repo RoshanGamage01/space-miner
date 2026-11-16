@@ -43,6 +43,7 @@ const ui = new UIManager({
   audio,
   root,
   onView: toggleView,
+  hasSave: !!loaded,
   onSave: save,
   onReset: () => {
     resetting = true;
@@ -117,9 +118,35 @@ function touchAim(inp) {
   }
 }
 
+// Game feel: brief freezes on impact and slow motion for big moments.
+let freeze = 0;
+let slowmo = 0;
+let slowAcc = 0;
+function feel(fx) {
+  for (const e of fx) {
+    if (e.type === 'kill') {
+      freeze = Math.max(freeze, e.boss ? 0.18 : e.big ? 0.08 : 0.025);
+      if (e.boss) slowmo = 2.2;
+    } else if (e.type === 'hurt' && !e.shield) freeze = Math.max(freeze, 0.04);
+    else if (e.type === 'bossIntro') slowmo = 2.6;
+    else if (e.type === 'shipDestroyed') slowmo = 1.2;
+  }
+}
+
 const loop = new GameLoop({
   update(dt) {
     const s = state();
+    if (ui.blocking) return;
+    if (freeze > 0) {
+      freeze -= dt;
+      return;
+    }
+    if (slowmo > 0) {
+      slowmo -= dt;
+      slowAcc += 0.3;
+      if (slowAcc < 1) return;
+      slowAcc -= 1;
+    }
     const cockpit = s.settings.view === 'cockpit';
     input.currentWeapon = s.weapon;
     const inp = input.snapshot(toWorld, s.ship, ui.menuOpen, cockpit, WEAPON_IDS);
@@ -127,6 +154,7 @@ const loop = new GameLoop({
     engine.step(dt, inp);
     const fx = engine.drainFx();
     if (fx.length) {
+      feel(fx);
       renderer.handleFx(fx, s);
       ui.handleFx(fx);
       audio.handleFx(fx);
@@ -143,9 +171,11 @@ const loop = new GameLoop({
       canSalvage: !!nearbyDerelict(s),
       cargoPct: cargoUsed(s.cargo) / engine.stats.cargoCap,
       mode: s.settings.view,
+      glow: s.settings.glow,
     });
     ui.frame(dt);
-    audio.update(s.ship);
+    audio.update(s.ship, ui.blocking);
+    audio.setIntensity(ui.scene === 'title' ? 0 : s.bossId ? 2 : s.enemies.some((e) => e.kind !== 'hive' && dist(e.x, e.y, s.ship.x, s.ship.y) < 520) ? 1 : 0);
     saveTimer -= dt;
     if (wantSave || saveTimer <= 0) {
       save();

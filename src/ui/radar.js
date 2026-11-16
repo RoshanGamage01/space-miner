@@ -73,7 +73,12 @@ export function drawRadar(canvas, state, stats, time) {
     }
   }
   for (const d of state.derelicts) plot(d.x, d.y, 4, '#7dffb0', 'rgba(125,255,176,0.3)');
-  for (const e of state.enemies) plot(e.x, e.y, e.kind === 'mothership' ? 6 : 3, e.kind === 'pirate' ? '#ff8c42' : '#9dff4a', e.kind === 'pirate' ? 'rgba(255,140,66,0.3)' : 'rgba(157,255,74,0.3)');
+  for (const e of state.enemies) {
+    if (e.kind === 'hive') plot(e.x, e.y, 6, '#ff4df0', 'rgba(255,77,240,0.35)');
+    else if (e.kind === 'boss') plot(e.x, e.y, 7, '#ff4d6d', 'rgba(255,77,109,0.4)');
+    else plot(e.x, e.y, 3, e.kind === 'pirate' ? '#ff8c42' : e.elite ? '#ffd23e' : '#9dff4a', 'rgba(157,255,74,0.3)');
+  }
+  for (const p of state.pickups) if (p.type.startsWith('pow_')) plot(p.x, p.y, 3, '#ffffff', 'rgba(255,255,255,0.3)');
   for (const d of state.drones) plot(d.x, d.y, 2, '#ffd23e');
   // Station: clamp to edge if out of range.
   let sx = (0 - ship.x) * k;

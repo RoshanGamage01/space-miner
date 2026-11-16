@@ -17,7 +17,7 @@ export class InputController {
     this.keys = new Set();
     this.mouse = { x: 0, y: 0, down: false, right: false, inside: false };
     this.touch = null;
-    this.latched = { interact: false, ability: false, weapon: null, cycle: false };
+    this.latched = { interact: false, ability: false, dash: false, weapon: null, cycle: false };
     this.onHotkey = onHotkey;
     this.enabled = true;
     this.usedTouch = false;
@@ -33,6 +33,7 @@ export class InputController {
       this.keys.add(e.code);
       if (e.code === 'KeyE') this.latched.interact = true;
       if (e.code === 'Space') this.latched.ability = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.latched.dash = true;
       const n = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[e.code];
       if (n !== undefined) this.latched.weapon = n;
       if (e.code === 'KeyQ') this.latched.cycle = true;
@@ -110,6 +111,7 @@ export class InputController {
       boost: this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'),
       interact: this.latched.interact,
       ability: this.latched.ability,
+      dash: this.latched.dash,
       menuOpen,
       touchAim: false,
     };
@@ -120,6 +122,7 @@ export class InputController {
     }
     this.latched.interact = false;
     this.latched.ability = false;
+    this.latched.dash = false;
     this.latched.weapon = null;
     this.latched.cycle = false;
 

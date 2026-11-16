@@ -13,6 +13,9 @@ import {
   SHIP_IDS,
   UPGRADES,
   UPGRADE_IDS,
+  BOSSES,
+  PERKS,
+  POWERUPS,
   WEAPONS,
   WEAPON_IDS,
   WEAPON_MAX,
@@ -26,6 +29,7 @@ import { price } from '../systems/EconomyManager.js';
 import { missionProgress } from '../systems/MissionManager.js';
 import { droneBuyInfo, sectorInfo, upgradeInfo, weaponInfo } from '../systems/UpgradeManager.js';
 import { eventProgress } from '../systems/EventManager.js';
+import { objective } from '../systems/CampaignSystem.js';
 import { mapSprite } from '../render/sprites.js';
 
 const SCREENS = [
@@ -44,7 +48,9 @@ function shipImage(id) {
 }
 
 export class UIManager {
-  constructor({ engine, audio, root, onReset, onSave, onView }) {
+  constructor({ engine, audio, root, onReset, onSave, onView, onStart, hasSave }) {
+    this.onStart = onStart;
+    this.hasSave = hasSave;
     this.engine = engine;
     this.audio = audio;
     this.root = root;
@@ -53,12 +59,15 @@ export class UIManager {
     this.onView = onView;
     this.screen = null;
     this.hangarTab = 'ship';
+    this.scene = 'title';
+    this.paused = false;
     this.cache = new Map();
     this.timer = 0;
     this.slow = 0;
     this.time = 0;
     this.build();
     this.bind();
+    this.showTitle();
   }
 
   get state() {
@@ -72,7 +81,9 @@ export class UIManager {
         <div class="pill credits">${icon('credits', '#ffd23e', 16)}<b data-k="credits"></b></div>
         <div class="pill level"><b data-k="level"></b><div class="xp"><i data-k="xp"></i></div></div>
         <div class="center">
+          <div class="objective" data-k="objective"></div>
           <div class="mission" data-k="mission"></div>
+          <div class="bossbar" data-k="bossbar" hidden></div>
           <div class="event" data-k="event" hidden></div>
         </div>
         <button class="icon-btn view-btn" data-ui="view" title="Cockpit view (V)">${icon('eye', '#9fe8ff', 18)}<span data-k="viewlabel">Cockpit</span></button>
@@ -81,14 +92,16 @@ export class UIManager {
       </header>
       <div id="combo" data-k="combo"></div>
 
+      <div id="letterbox"><i></i><i></i></div>
       <div id="status">
+        <div class="pows" data-k="pows"></div>
         <div class="bars">
           <div class="b hull" title="Hull"><i data-k="hull"></i></div>
           <div class="b shield" title="Shield"><i data-k="shield"></i></div>
           <div class="b energy" title="Laser energy"><i data-k="energy"></i></div>
           <div class="cargo-line">${icon('cargo', '#ffd23e', 14)}<div class="b cargo"><i data-k="cargo"></i></div><span data-k="cargotext"></span></div>
         </div>
-        <div class="slots">${slots}<button class="slot pulse" data-ui="pulse" title="Shockwave (Space)">${icon('pulse', '#b99bff', 20)}<kbd>␣</kbd><i class="cd" data-k="pulsecd"></i></button></div>
+        <div class="slots">${slots}<div class="slot dash" title="Dash (Shift)">${icon('engine', '#ff8c42', 20)}<kbd>⇧</kbd><i class="cd" data-k="dashcd"></i></div><button class="slot pulse" data-ui="pulse" title="Shockwave (Space)">${icon('pulse', '#b99bff', 20)}<kbd>␣</kbd><i class="cd" data-k="pulsecd"></i></button></div>
       </div>
 
       <div id="radar-wrap"><canvas id="radar"></canvas></div>
@@ -101,12 +114,18 @@ export class UIManager {
       </div></section>
 
       <div id="hints" data-k="hints">
-        <span><kbd>WASD</kbd> fly</span><span><b>Left click</b> mine</span><span><b>Right click</b> shoot</span><span><kbd>E</kbd> dock &amp; sell</span><span><kbd>V</kbd> cockpit</span>
+        <span><kbd>WASD</kbd> fly</span><span><b>Left click</b> mine</span><span><b>Right click</b> shoot</span><span><kbd>Shift</kbd> dash</span><span><kbd>E</kbd> dock &amp; sell</span>
         <button data-ui="hints-close">✕</button>
       </div>
       <div id="banner" data-k="banner"></div>
       <div id="toasts"></div>
-      <div id="modal" data-k="modal"></div>`;
+      <div id="modal" data-k="modal"></div>
+      <div id="title" data-k="titlescreen">
+        <div class="logo"><span>SPACE</span><span>MINER</span></div>
+        <p class="tag-line">Mine the belt. Break the hives. Kill the Queen.</p>
+        <div class="title-buttons" data-k="titlebuttons"></div>
+        <p class="title-keys"><kbd>WASD</kbd> fly · <b>LMB</b> mine · <b>RMB</b> shoot · <kbd>Shift</kbd> dash · <kbd>Space</kbd> shockwave · <kbd>V</kbd> cockpit</p>
+      </div>`;
     this.el = {};
     this.root.querySelectorAll('[data-k]').forEach((e) => (this.el[e.dataset.k] = e));
     this.toastBox = this.root.querySelector('#toasts');
@@ -118,8 +137,9 @@ export class UIManager {
   bind() {
     this.root.addEventListener('click', (e) => {
       this.audio.unlock();
-      const t = e.target.closest('[data-act],[data-nav],[data-ui],[data-tab]');
+      const t = e.target.closest('[data-act],[data-nav],[data-ui],[data-tab],[data-perk]');
       if (!t) return;
+      if (t.dataset.perk) return this.pick(t.dataset.perk);
       if (t.dataset.nav) return this.openScreen(t.dataset.nav === 'close' ? null : t.dataset.nav);
       if (t.dataset.tab) {
         this.hangarTab = t.dataset.tab;
@@ -180,6 +200,21 @@ export class UIManager {
       case 'modal-close':
         this.closeModal();
         break;
+      case 'play':
+        this.startGame();
+        break;
+      case 'newgame':
+        if (el.dataset.confirm) return this.onReset?.();
+        el.dataset.confirm = '1';
+        el.textContent = 'Erase save and restart?';
+        return;
+      case 'resume':
+        this.setPaused(false);
+        break;
+      case 'quit':
+        this.setPaused(false);
+        this.showTitle();
+        break;
       case 'reset':
         if (el.dataset.confirm) this.onReset?.();
         else {
@@ -194,12 +229,29 @@ export class UIManager {
   }
 
   hotkey(e) {
+    if (this.scene === 'title') {
+      if (e.code === 'Enter' || e.code === 'Space') this.startGame();
+      return true;
+    }
+    if (this.perkOpen) {
+      const n = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+      if (n !== undefined && this.state.perkChoices?.[n]) this.pick(this.state.perkChoices[n]);
+      return true;
+    }
+    if (this.paused) {
+      if (e.code === 'Escape' || e.code === 'KeyP') this.setPaused(false);
+      return true;
+    }
     if (this.modalOpen) {
       if (e.code === 'Escape') {
         this.closeModal();
         return true;
       }
       return false;
+    }
+    if (e.code === 'KeyP' || (e.code === 'Escape' && !this.screen && !this.state.ship.docked)) {
+      this.setPaused(true);
+      return true;
     }
     const map = { KeyH: 'hangar', KeyM: 'market', KeyG: 'galaxy' };
     if (map[e.code]) {
@@ -223,6 +275,64 @@ export class UIManager {
 
   get menuOpen() {
     return !!this.screen || !!this.modalOpen;
+  }
+
+  // True while the simulation should stand still.
+  get blocking() {
+    return this.scene === 'title' || this.paused || !!this.modalOpen || (!!this.screen && !this.state.ship.docked);
+  }
+
+  showTitle() {
+    this.scene = 'title';
+    this.root.classList.add('on-title');
+    const has = this.hasSave || this.state.stats.playTime > 5;
+    this.el.titlebuttons.innerHTML = has
+      ? `<button class="tbtn main" data-ui="play">Continue <small>Level ${this.state.level} · ${SECTORS[this.state.sector].name}</small></button><button class="tbtn" data-ui="newgame">New game</button>`
+      : `<button class="tbtn main" data-ui="play">Launch</button>`;
+  }
+
+  startGame() {
+    this.scene = 'play';
+    this.root.classList.remove('on-title');
+    this.audio.unlock();
+    this.audio.play('warp');
+    this.onStart?.();
+  }
+
+  setPaused(on) {
+    this.paused = on;
+    if (on) {
+      this.modal(`<h2>Paused</h2>
+        <div class="perk-list">${Object.keys(this.state.perks).map((id) => `<span class="chip" style="border-color:${PERKS[id].color}">${icon(PERKS[id].icon, PERKS[id].color, 14)}${PERKS[id].name} ${'I'.repeat(this.state.perks[id])}</span>`).join('') || '<span class="muted">No perks yet. Level up to choose one.</span>'}</div>
+        <div class="row buttons"><button class="buy ok" data-ui="resume">Resume</button><button class="buy" data-ui="settings">Settings</button><button class="buy" data-ui="quit">Title screen</button></div>`);
+    } else this.closeModal();
+  }
+
+  // Level-up: choose one of three perks. The game waits.
+  showPerks() {
+    const c = this.state.perkChoices;
+    if (!c || this.perkOpen || this.modalOpen || this.scene === 'title') return;
+    this.perkOpen = true;
+    this.audio.play('levelUp');
+    this.modal(`<h2 class="perk-title">LEVEL ${this.state.level} · CHOOSE A PERK</h2>
+      <div class="perks">${c
+        .map((id, i) => {
+          const p = PERKS[id];
+          const have = this.state.perks[id] || 0;
+          return `<button class="perk" data-perk="${id}" style="--c:${p.color}"><kbd>${i + 1}</kbd>${icon(p.icon, p.color, 40)}<h3>${p.name}</h3><p>${p.desc}</p>${pips(have + 1, p.max, p.color)}</button>`;
+        })
+        .join('')}</div>`);
+    this.el.modal.classList.add('perk-modal');
+  }
+
+  pick(id) {
+    const r = this.engine.act('perk', id);
+    if (!r.ok) return;
+    this.perkOpen = false;
+    this.el.modal.classList.remove('perk-modal');
+    this.closeModal();
+    this.audio.play('upgrade');
+    this.onSave?.();
   }
 
   // ------------------------------------------------------------ screens
@@ -334,10 +444,10 @@ export class UIManager {
       let btn;
       if (i.current) btn = '<button class="buy" disabled>You are here</button>';
       else if (i.unlocked) btn = `<button class="buy ok" data-act="travel" data-arg="${id}">Warp</button>`;
-      else if (!i.levelOk) btn = `<button class="buy" disabled>${icon('lock', '#8a95b8', 12)} Level ${d.level}</button>`;
-      else btn = this.buy('Unlock', d.cost, 'travel', id, i.affordable);
+      else btn = `<button class="buy" disabled>${icon('lock', '#8a95b8', 12)} Defeat ${esc(i.prevBoss)}</button>`;
       const danger = Array.from({ length: 4 }, (_, k) => `<i class="${k < Math.round(d.danger) ? 'on' : ''}"></i>`).join('');
-      return `<div class="card sector ${i.current ? 'current' : ''}" style="--c:${d.palette.planet[2]};--n:${d.palette.nebula[0]};--p:${d.palette.planet[0]}"><div class="planet"></div><h3>${d.name}</h3><p>${d.blurb}</p><div class="danger">${icon('alien', '#9dff4a', 12)}${danger}</div>${btn}</div>`;
+      const status = i.cleared ? `<span class="cleared">${icon('star', '#7dffb0', 12)} Cleared</span>` : i.unlocked ? `<span class="muted">Hives ${i.hives}/3 · Boss: ${esc(i.boss)}</span>` : '<span class="muted">Locked</span>';
+      return `<div class="card sector ${i.current ? 'current' : ''} ${i.unlocked ? '' : 'dim'}" style="--c:${d.palette.planet[2]};--n:${d.palette.nebula[0]};--p:${d.palette.planet[0]}"><div class="planet"></div><h3>${d.name}</h3><p>${d.blurb}</p><div class="danger">${icon('alien', '#9dff4a', 12)}${danger}</div>${status}${btn}</div>`;
     }).join('');
     const medals = ACHIEVEMENT_IDS.map((id) => `<span class="medal ${s.achievements[id] ? 'got' : ''}" title="${esc(ACHIEVEMENTS[id].name)}: ${esc(ACHIEVEMENTS[id].desc)}">${icon('trophy', s.achievements[id] ? '#ffd23e' : '#2a3350', 22)}</span>`).join('');
     return `<div class="grid">${cards}</div><div class="medals">${medals}</div>`;
@@ -364,7 +474,8 @@ export class UIManager {
     this.el.cargo.parentElement.classList.toggle('full', used >= st.cargoCap);
     this.el.energy.parentElement.classList.toggle('hot', !!ship.overheat);
     this.el.hull.parentElement.classList.toggle('low', ship.hull / st.hullMax < 0.3);
-    this.el.pulsecd.style.height = `${(ship.pulseCd / 18) * 100}%`;
+    this.el.pulsecd.style.height = `${(ship.pulseCd / st.pulseCooldown) * 100}%`;
+    this.el.dashcd.style.height = `${Math.max(0, ship.dashCd / st.dashCooldown) * 100}%`;
     this.slotEls.forEach((b) => {
       const id = b.dataset.arg;
       const lv = s.weapons[id] || 0;
@@ -382,6 +493,17 @@ export class UIManager {
       const html = `${icon('flag', '#ffd23e', 14)}<span>${esc(m.title)}</span><b>${fmt(p)}/${fmt(m.goal)}</b><i class="reward">+${fmt(m.credits)}</i><div class="mbar"><i style="width:${((p / m.goal) * 100).toFixed(1)}%"></i></div>`;
       this.setHTML('mission', this.el.mission, html);
     }
+    // Campaign objective and boss bar.
+    const ob = objective(s);
+    this.setHTML('objective', this.el.objective, `${icon(ob.kind === 'hive' ? 'alien' : ob.kind === 'boss' ? 'alien' : 'planet', ob.kind === 'boss' ? '#ff4d6d' : '#ff4df0', 14)}<span>${esc(ob.text)}</span>${ob.value ? `<b>${ob.value}</b>` : ''}`);
+    const boss = s.bossId ? s.enemies.find((e) => e.id === s.bossId) : null;
+    if (boss) {
+      const b = BOSSES[boss.bossKey];
+      this.el.bossbar.hidden = false;
+      this.setHTML('bossbar', this.el.bossbar, `<b style="color:${b.color}">${b.name}</b><div class="boss ${boss.enraged ? 'rage' : ''}"><i style="width:${((boss.hp / boss.maxHp) * 100).toFixed(1)}%;background:${b.color}"></i></div>`);
+    } else this.el.bossbar.hidden = true;
+    // Active power-ups.
+    this.setHTML('pows', this.el.pows, Object.keys(s.powerups).map((id) => `<span style="--c:${POWERUPS[id].color}">${POWERUPS[id].name} ${Math.ceil(s.powerups[id])}s</span>`).join(''));
     // Event chip.
     const ev = s.event;
     if (ev) {
@@ -423,6 +545,7 @@ export class UIManager {
       if (this.screen) this.refreshScreen();
       // Hide the hint strip for good once the player has found their feet.
       if (this.state.settings.hints && this.state.stats.sales > 0 && this.state.stats.kills > 0) this.state.settings.hints = false;
+      this.showPerks();
     }
   }
 
@@ -431,7 +554,29 @@ export class UIManager {
     for (const e of events) {
       switch (e.type) {
         case 'levelUp':
-          this.banner(`LEVEL ${e.level}`, `+${fmt(e.credits)} cr`, '#ffd23e');
+          break;
+        case 'kill': {
+          const names = { 5: 'KILLING SPREE', 10: 'RAMPAGE', 15: 'UNSTOPPABLE', 20: 'GODLIKE', 30: 'EXTINCTION EVENT' };
+          if (names[e.combo]) this.banner(names[e.combo], `x${e.combo} combo`, '#ffd23e');
+          break;
+        }
+        case 'bossIntro':
+          this.cinematic(e.name, e.title, e.color);
+          break;
+        case 'enrage':
+          this.banner('ENRAGED', e.name, '#ff4d6d');
+          break;
+        case 'hiveDown':
+          this.banner('HIVE DESTROYED', e.left ? `${e.left} left in this sector` : 'Something big is coming...', '#ff4df0');
+          break;
+        case 'sectorCleared':
+          this.banner('SECTOR CLEARED', e.next ? `${e.next} unlocked · press G` : '', '#7dffb0');
+          break;
+        case 'gameWon':
+          setTimeout(() => this.victory(), 2500);
+          break;
+        case 'respawn':
+          this.toast('Towed back to the station. Hull patched up.', 'info');
           break;
         case 'mission':
           this.toast(`${icon('flag', '#7dffb0', 14)} ${esc(e.title)} <b>+${fmt(e.credits)} cr</b>`, 'good');
@@ -462,6 +607,8 @@ export class UIManager {
           break;
         case 'shipDestroyed':
           this.banner('SHIP DESTROYED', 'Half your cargo was lost', '#ff4d6d');
+          this.root.classList.add('dead');
+          setTimeout(() => this.root.classList.remove('dead'), 2400);
           break;
         case 'stolen':
           this.toast(`Pirates stole ${e.qty} ${RESOURCES[e.res].name}!`, 'warn');
@@ -521,6 +668,7 @@ export class UIManager {
 
   banner(title, sub, color) {
     if (this.screen) return this.toast(`<b style="color:${color}">${esc(title)}</b> ${esc(sub || '')}`);
+    if (this.root.classList.contains('cinema')) return;
     const b = this.el.banner;
     b.style.setProperty('--c', color);
     b.innerHTML = `<b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}`;
@@ -531,6 +679,30 @@ export class UIManager {
     this.bannerT = setTimeout(() => b.classList.remove('show'), 2400);
   }
 
+  // Boss entrance: letterbox bars and a title card.
+  cinematic(name, sub, color) {
+    this.openScreen(null);
+    this.root.classList.add('cinema');
+    const b = this.el.banner;
+    b.style.setProperty('--c', color);
+    b.innerHTML = `<small class="warn">WARNING</small><b>${esc(name)}</b><small>${esc(sub)}</small>`;
+    b.classList.add('show', 'boss-card');
+    clearTimeout(this.bannerT);
+    this.bannerT = setTimeout(() => {
+      b.classList.remove('show', 'boss-card');
+      this.root.classList.remove('cinema');
+    }, 3200);
+  }
+
+  victory() {
+    const st = this.state.stats;
+    this.modal(`<h2 class="perk-title">THE GALAXY IS SAVED</h2>
+      <p>The Hive Queen is dead. The swarm is leaderless, and the belt is yours.</p>
+      <div class="stats"><span>Time<b>${fmtTime(st.playTime)}</b></span><span>Aliens destroyed<b>${fmt(st.aliens)}</b></span><span>Best combo<b>x${st.bestCombo}</b></span><span>Ships lost<b>${st.deaths}</b></span><span>Credits earned<b>${fmt(st.earned)}</b></span><span>Pilot level<b>${this.state.level}</b></span></div>
+      <p class="muted">You can keep flying: every sector stays open and the aliens keep coming.</p>
+      <div class="row buttons"><button class="buy ok" data-ui="modal-close">Keep flying</button></div>`);
+  }
+
   modal(html) {
     this.modalOpen = true;
     this.el.modal.innerHTML = `<div class="card-modal">${html}</div>`;
@@ -539,7 +711,9 @@ export class UIManager {
 
   closeModal() {
     this.modalOpen = false;
-    this.el.modal.classList.remove('open');
+    this.paused = false;
+    this.perkOpen = false;
+    this.el.modal.classList.remove('open', 'perk-modal');
   }
 
   openSettings() {
@@ -548,8 +722,9 @@ export class UIManager {
       <label class="row">Volume <input type="range" min="0" max="100" value="${Math.round(s.volume * 100)}" data-setting="volume"></label>
       <label class="row"><input type="checkbox" data-setting="music" ${s.music ? 'checked' : ''}> Music</label>
       <label class="row"><input type="checkbox" data-setting="hints" ${s.hints ? 'checked' : ''}> Control hints</label>
+      <label class="row"><input type="checkbox" data-setting="glow" ${s.glow ? 'checked' : ''}> Glow effects</label>
       <div class="controls">
-        <span><kbd>WASD</kbd> fly</span><span><kbd>Shift</kbd> boost</span><span><b>Left click</b> mine</span><span><b>Right click</b>/<kbd>F</kbd> shoot</span>
+        <span><kbd>WASD</kbd> fly</span><span><kbd>Shift</kbd> dash / boost</span><span><b>Left click</b> mine</span><span><b>Right click</b>/<kbd>F</kbd> shoot</span>
         <span><kbd>1-4</kbd>/<kbd>Q</kbd> weapon</span><span><kbd>Space</kbd> shockwave</span><span><kbd>E</kbd> dock</span><span><kbd>V</kbd> cockpit view</span>
         <span><kbd>H</kbd> hangar</span><span><kbd>M</kbd> market</span><span><kbd>G</kbd> galaxy</span><span><kbd>Esc</kbd> close</span>
       </div>

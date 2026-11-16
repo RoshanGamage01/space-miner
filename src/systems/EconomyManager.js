@@ -14,6 +14,7 @@ export function addXp(state, amount, x, y) {
     state.level++;
     const bonus = 100 * state.level;
     state.credits += bonus;
+    state.pendingPerks = (state.pendingPerks || 0) + 1;
     emit(state, 'levelUp', { level: state.level, credits: bonus });
   }
 }

@@ -1,8 +1,9 @@
 // UpgradeManager: ship upgrades, weapons, drones, ship hulls and sectors.
 // Every purchase validates before it mutates state and returns { ok, reason }.
-import { SECTORS, SHIPS, UPGRADES, WEAPONS, WEAPON_MAX, droneCost, weaponUpgradeCost } from '../core/config.js';
+import { BOSSES, PERKS, PERK_IDS, SECTORS, SECTOR_IDS, SHIPS, UPGRADES, WEAPONS, WEAPON_MAX, droneCost, weaponUpgradeCost } from '../core/config.js';
 import { addDrone, emit, getStats, upgradeCost } from '../core/state.js';
 import { generateSector } from './AsteroidManager.js';
+import { setupSector } from './CampaignSystem.js';
 
 const fail = (reason) => ({ ok: false, reason });
 
@@ -106,20 +107,19 @@ export function switchShip(state, id) {
 
 export function sectorInfo(state, id) {
   const def = SECTORS[id];
-  return { def, unlocked: state.unlockedSectors.includes(id), current: state.sector === id, levelOk: state.level >= def.level, affordable: state.credits >= def.cost };
+  const idx = SECTOR_IDS.indexOf(id);
+  const prev = idx > 0 ? SECTOR_IDS[idx - 1] : null;
+  const p = state.progress[id] || { hives: 0, boss: false };
+  return { def, unlocked: state.unlockedSectors.includes(id), current: state.sector === id, prevBoss: prev ? BOSSES[prev].name : null, boss: BOSSES[id].name, hives: p.hives, cleared: p.boss };
 }
 
-// Unlocks (if needed) and warps in one step.
+// Warp to a sector you have opened by beating the previous sector's boss.
 export function travel(state, id) {
   if (!SECTORS[id]) return fail('Unknown sector');
   const info = sectorInfo(state, id);
   if (info.current) return fail('Already here');
-  if (!info.unlocked) {
-    if (!info.levelOk) return fail(`Unlocks at level ${info.def.level}`);
-    if (!info.affordable) return fail('Not enough credits');
-    state.credits -= info.def.cost;
-    state.unlockedSectors.push(id);
-  }
+  if (!info.unlocked) return fail(`Defeat the ${info.prevBoss} first`);
+  if (state.bossId) return fail('Not while the boss is hunting you');
   state.sector = id;
   state.ship.x = 0;
   state.ship.y = 120;
@@ -128,6 +128,7 @@ export function travel(state, id) {
   state.event = null;
   state.nextPatrolAt = state.time + 40;
   generateSector(state);
+  setupSector(state);
   for (const d of state.drones) {
     d.x = (Math.random() - 0.5) * 60;
     d.y = (Math.random() - 0.5) * 60;
@@ -135,5 +136,34 @@ export function travel(state, id) {
     d.target = 0;
   }
   emit(state, 'warp', { id, name: SECTORS[id].name });
+  return { ok: true };
+}
+
+// ------------------------------------------------------------ perks
+export function rollPerks(state) {
+  const pool = PERK_IDS.filter((id) => (state.perks[id] || 0) < PERKS[id].max);
+  const out = [];
+  while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  return out;
+}
+
+// Keeps a set of three choices on offer while a pick is pending.
+export function ensurePerkChoices(state) {
+  if (state.pendingPerks > 0 && !state.perkChoices) {
+    const c = rollPerks(state);
+    if (c.length) state.perkChoices = c;
+    else state.pendingPerks = 0;
+  }
+  return state.perkChoices;
+}
+
+export function pickPerk(state, id) {
+  if (!state.pendingPerks || !state.perkChoices?.includes(id)) return fail('Not on offer');
+  state.perks[id] = (state.perks[id] || 0) + 1;
+  state.pendingPerks--;
+  state.perkChoices = null;
+  if (id === 'plating') state.ship.hull += 25;
+  emit(state, 'perk', { id, name: PERKS[id].name, level: state.perks[id] });
+  ensurePerkChoices(state);
   return { ok: true };
 }

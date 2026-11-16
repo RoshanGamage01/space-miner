@@ -22,8 +22,8 @@ function statValue(state, m) {
       return s.upgrades;
     case 'aliens':
       return s.aliens;
-    case 'bosses':
-      return s.bosses;
+    case 'elites':
+      return s.elites;
     case 'drones':
       return state.drones.length;
     case 'weapons':
@@ -54,7 +54,7 @@ function generateMission(state) {
   const L = state.level;
   const sec = sectorDef(state);
   const kinds = { aliens: 4, collect: 3, asteroids: 1.5, earned: 1.5, upgrades: 1 };
-  if (L >= 6) kinds.bosses = 0.8;
+  if (L >= 4) kinds.elites = 1;
   if (L >= 3 && state.stats.bestCombo < 10) kinds.combo = 0.8;
   const last = state.missions.lastKind;
   if (kinds[last]) kinds[last] *= 0.2;
@@ -84,9 +84,10 @@ function generateMission(state) {
       const goal = Math.min(10, Math.max(state.stats.bestCombo + 1, 3));
       return { kind, goal, title: `Get a x${goal} kill combo`, credits: r(200 * L, 10), xp: 60 + L * 12 };
     }
-    case 'bosses':
-    default:
-      return { kind: 'bosses', goal: 1, title: 'Destroy a mothership', credits: r(1500 * sec.danger, 10), xp: 200 + L * 20 };
+    default: {
+      const goal = 2 + Math.floor(L / 6);
+      return { kind: 'elites', goal, title: `Destroy ${goal} elite aliens`, credits: r(goal * 300 * sec.danger, 10), xp: 80 + L * 15 };
+    }
   }
 }
 

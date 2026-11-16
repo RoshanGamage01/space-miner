@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GameEngine } from '../src/engine/GameEngine.js';
 import { createState, cargoUsed, getStats } from '../src/core/state.js';
-import { EVENT_IDS, MARKET, RESOURCE_IDS, SIM_STEP, STATION, WEAPONS, xpToNext } from '../src/core/config.js';
+import { EVENT_IDS, HIVES_PER_SECTOR, MARKET, RESOURCE_IDS, SIM_STEP, STATION, WEAPONS, xpToNext } from '../src/core/config.js';
+import { objective } from '../src/systems/CampaignSystem.js';
 import { spawnAsteroid } from '../src/systems/AsteroidManager.js';
 import { spawnPickup } from '../src/systems/ResourceManager.js';
 import { addXp, price, updateMarket } from '../src/systems/EconomyManager.js';
@@ -12,7 +13,7 @@ import { applyOffline, deserialize, serialize } from '../src/systems/SaveManager
 import { endEvent, startEvent } from '../src/systems/EventManager.js';
 import { missionProgress } from '../src/systems/MissionManager.js';
 import { upgradeInfo } from '../src/systems/UpgradeManager.js';
-import { damageEnemy, spawnEnemy } from '../src/systems/CombatSystem.js';
+import { applyPowerup, damageEnemy, spawnEnemy } from '../src/systems/CombatSystem.js';
 import { playBot } from './space-miner-bot.js';
 
 const IDLE = { mx: 0, my: 0, fire: false, shoot: false, boost: false, interact: false, ability: false, menuOpen: false };
@@ -23,6 +24,7 @@ function quietEngine() {
   g.state.nextEventAt = Infinity;
   g.state.nextPatrolAt = Infinity;
   g.state.asteroids.length = 0;
+  g.state.enemies.length = 0; // no hives
   g.state.respawnTimer = Infinity;
   return g;
 }
@@ -257,30 +259,218 @@ test('invasion: three waves then a reward', () => {
   assert.ok(s.credits > credits, 'victory bonus');
 });
 
-test('the mothership boss spawns minions and can be destroyed', () => {
-  const g = quietEngine();
+test('campaign: destroy the hives, beat the boss, unlock the next sector', () => {
+  const g = new GameEngine();
   const s = g.state;
-  s.level = 6;
-  startEvent(s, 'mothership');
-  const boss = s.enemies.find((e) => e.kind === 'mothership');
-  assert.ok(boss);
-  boss.x = s.ship.x + 300;
-  boss.y = s.ship.y;
+  s.nextEventAt = Infinity;
+  s.nextPatrolAt = Infinity;
+  const hives = s.enemies.filter((e) => e.kind === 'hive');
+  assert.equal(hives.length, HIVES_PER_SECTOR);
+  assert.equal(objective(s).kind, 'hive');
+  assert.equal(g.act('travel', 'cobalt').ok, false, 'next sector is locked');
+  for (const h of hives) damageEnemy(s, h, 1e9);
+  assert.equal(s.progress.kepler.hives, 3);
+  assert.equal(objective(s).kind, 'boss');
+  s.ship.x = 1200; // out in the field
   run(g, 8, () => {
     s.ship.hull = 999;
     return IDLE;
   });
-  assert.ok(s.enemies.some((e) => e.kind === 'swarmer'), 'launches swarmers');
-  boss.hp = 1;
-  boss.x = s.ship.x;
-  boss.y = s.ship.y + 60;
-  run(g, 1, () => {
+  const boss = s.enemies.find((e) => e.kind === 'boss');
+  assert.ok(boss, 'boss arrives');
+  assert.equal(boss.bossKey, 'kepler');
+  // It attacks with patterns and summons minions.
+  const before = s.shots.length;
+  run(g, 9, () => {
     s.ship.hull = 999;
-    return aimAt(boss, { shoot: true });
+    boss.x = s.ship.x + 200;
+    boss.y = s.ship.y;
+    return IDLE;
   });
+  assert.ok(s.shots.length > before || s.enemies.length > 1, 'boss fights back');
+  boss.hp = boss.maxHp * 0.4;
+  run(g, 0.2, () => {
+    s.ship.hull = 999;
+    return IDLE;
+  });
+  assert.ok(boss.enraged, 'enrages below half health');
+  damageEnemy(s, boss, 1e9);
+  assert.ok(s.progress.kepler.boss);
   assert.equal(s.stats.bosses, 1);
+  assert.ok(s.unlockedSectors.includes('cobalt'));
+  assert.equal(objective(s).kind, 'warp');
+  s.pendingPerks = 0;
+  assert.ok(g.act('travel', 'cobalt').ok);
+  assert.equal(s.enemies.filter((e) => e.kind === 'hive').length, 3, 'new sector has its own hives');
+});
+
+test('killing the Hive Queen wins the game', () => {
+  const g = quietEngine();
+  const s = g.state;
+  s.unlockedSectors = ['kepler', 'cobalt', 'ember', 'void'];
+  assert.ok(g.act('travel', 'void').ok);
+  s.nextEventAt = s.nextPatrolAt = Infinity;
+  for (const h of s.enemies.filter((e) => e.kind === 'hive')) damageEnemy(s, h, 1e9);
+  s.ship.x = 1500;
+  run(g, 8, () => {
+    s.ship.hull = 1e6;
+    return IDLE;
+  });
+  const queen = s.enemies.find((e) => e.kind === 'boss');
+  assert.equal(queen.bossKey, 'void');
+  damageEnemy(s, queen, 1e9);
+  assert.ok(s.won);
+  assert.equal(s.stats.queen, 1);
+});
+
+test('hives survive save/load as campaign progress', () => {
+  const g = new GameEngine();
+  const s = g.state;
+  damageEnemy(s, s.enemies.find((e) => e.kind === 'hive'), 1e9);
+  s.perks = { crit: 2, wingman: 1 };
+  const t = deserialize(serialize(s)).state;
+  assert.equal(t.progress.kepler.hives, 1);
+  assert.deepEqual(t.perks, { crit: 2, wingman: 1 });
+  const g2 = new GameEngine(t);
+  assert.equal(g2.state.enemies.filter((e) => e.kind === 'hive').length, 2);
+});
+
+test('level-ups offer three perks; picking one changes the build', () => {
+  const g = quietEngine();
+  const s = g.state;
+  addXp(s, xpToNext(1));
+  run(g, 0.3);
+  assert.equal(s.pendingPerks, 1);
+  assert.equal(s.perkChoices.length, 3);
+  assert.equal(g.act('perk', 'nope').ok, false);
+  const rate = getStats(s).weapon.rate;
+  s.perkChoices = ['rapid', 'crit', 'wingman'];
+  assert.ok(g.act('perk', 'rapid').ok);
+  assert.equal(s.pendingPerks, 0);
+  assert.ok(getStats(s).weapon.rate > rate);
+  // Twin Barrels fires two bolts.
+  s.perks.multishot = 1;
+  run(g, 0.05, { ...IDLE, shoot: true });
+  assert.equal(s.shots.filter((x) => x.kind === 'blaster').length, 2);
+});
+
+test('perks: wingmen shoot, ricochet bounces, volatile kills chain', () => {
+  const g = quietEngine();
+  const s = g.state;
+  s.ship.x = 1500;
+  s.perks = { wingman: 2, ricochet: 1, blast: 2 };
+  const a = spawnEnemy(s, 'spitter', s.ship.x + 120, s.ship.y, { elite: false });
+  const b = spawnEnemy(s, 'spitter', s.ship.x + 150, s.ship.y + 20, { elite: false });
+  let fired = false;
+  run(g, 2, () => {
+    s.ship.hull = 999;
+    if (s.shots.some((x) => x.kind === 'wing')) fired = true;
+    return IDLE;
+  });
+  assert.equal(s.wingmen.length, 2);
+  assert.ok(fired, 'wingmen open fire');
+  const c = spawnEnemy(s, 'brute', s.ship.x + 3000, 0, { elite: false });
+  const d = spawnEnemy(s, 'swarmer', c.x + 20, 0, { elite: false });
+  const hp = c.hp;
+  damageEnemy(s, d, 1e9);
+  assert.ok(c.hp < hp, 'explosion hit the neighbour');
+  void a;
+  void b;
+});
+
+test('power-ups: timed boosts, repair and nuke', () => {
+  const g = quietEngine();
+  const s = g.state;
+  s.ship.x = 1500;
+  const base = getStats(s).weapon;
+  applyPowerup(s, 'overdrive');
+  applyPowerup(s, 'quad');
+  const st = getStats(s);
+  assert.equal(st.weapon.rate, base.rate * 2);
+  assert.equal(st.weapon.dmg, base.dmg * 3);
+  run(g, 11);
+  assert.deepEqual(s.powerups, {});
+  s.ship.hull = 10;
+  applyPowerup(s, 'repair');
+  assert.equal(s.ship.hull, 60);
+  for (let i = 0; i < 5; i++) spawnEnemy(s, 'swarmer', s.ship.x + 100 + i * 10, s.ship.y);
+  applyPowerup(s, 'nuke');
+  assert.equal(s.enemies.length, 0);
+  // Barrier blocks all damage; collected as a pickup.
+  spawnPickup(s, s.ship.x + 5, s.ship.y, 'pow_barrier', 1, 0);
   run(g, 0.5);
-  assert.equal(s.event, null);
+  assert.ok(s.powerups.barrier > 0);
+  spawnEnemy(s, 'swarmer', s.ship.x + 10, s.ship.y);
+  const hp = s.ship.hull + s.ship.shield;
+  run(g, 2);
+  assert.ok(s.ship.hull + s.ship.shield >= hp);
+});
+
+test('dash: burst of speed, invulnerable, on a cooldown', () => {
+  const g = quietEngine();
+  const s = g.state;
+  s.ship.x = 1500;
+  s.ship.invuln = 0;
+  run(g, 0.02, { ...IDLE, mx: 1, dash: true });
+  assert.ok(Math.hypot(s.ship.vx, s.ship.vy) > 300);
+  assert.ok(s.ship.invuln > 0 && s.ship.dashCd > 1);
+  const vx = s.ship.vx;
+  run(g, 0.02, { ...IDLE, mx: -1, dash: true });
+  assert.ok(s.ship.vx > 0 && s.ship.vx <= vx, 'cannot dash again yet');
+});
+
+test('new enemies: bombers explode, snipers telegraph, guardians have shields, elites drop power-ups', () => {
+  const g = quietEngine();
+  const s = g.state;
+  s.ship.x = 1500;
+  s.ship.invuln = 0;
+  const bomber = spawnEnemy(s, 'bomber', s.ship.x + 40, s.ship.y, { elite: false });
+  const hp = s.ship.hull + s.ship.shield;
+  run(g, 2);
+  assert.ok(!s.enemies.includes(bomber) && s.ship.hull + s.ship.shield < hp, 'bomber detonated on the player');
+
+  const sn = spawnEnemy(s, 'sniper', s.ship.x + 300, s.ship.y, { elite: false });
+  sn.fireCd = 0;
+  let aimed = false;
+  let fired = false;
+  run(g, 3, () => {
+    s.ship.hull = 999;
+    if (sn.aimT > 0) aimed = true;
+    if (s.shots.some((x) => x.kind === 'beam')) fired = true;
+    return IDLE;
+  });
+  assert.ok(aimed && fired, 'telegraph then shot');
+  damageEnemy(s, sn, 1e9);
+
+  const gd = spawnEnemy(s, 'guardian', s.ship.x + 2000, s.ship.y, { elite: false });
+  const sh = gd.shield;
+  damageEnemy(s, gd, sh * 0.5);
+  assert.equal(gd.hp, gd.maxHp, 'shield soaks the hit');
+  assert.ok(gd.shield < sh);
+
+  s.pickups.length = 0;
+  const el = spawnEnemy(s, 'swarmer', s.ship.x + 2000, s.ship.y, { elite: true });
+  assert.ok(el.maxHp > 22 * 2);
+  damageEnemy(s, el, 1e9);
+  assert.ok(s.pickups.some((p) => p.type.startsWith('pow_')));
+  assert.equal(s.stats.elites, 1);
+});
+
+test('destruction: a short blackout, then towed home', () => {
+  const g = quietEngine();
+  const s = g.state;
+  s.ship.x = 1500;
+  s.ship.invuln = 0;
+  s.cargo.iron = 40;
+  s.ship.hull = 1;
+  s.ship.shield = 0;
+  s.shots.push({ team: 'enemy', kind: 'plasma', x: s.ship.x, y: s.ship.y, vx: 0, vy: 0, life: 1, dmg: 50, color: '#fff' });
+  run(g, 0.1);
+  assert.ok(s.ship.deadT > 0);
+  assert.equal(s.cargo.iron, 20);
+  assert.equal(s.stats.deaths, 1);
+  run(g, 3);
+  assert.ok(s.ship.deadT <= 0 && Math.hypot(s.ship.x, s.ship.y) < 200 && s.ship.hull > 0);
 });
 
 test('every event starts and ends cleanly', () => {
@@ -353,7 +543,7 @@ test('one mission at a time, paid on completion', () => {
   assert.equal(s.missions.completed, 1);
 });
 
-test('levels, ships and sectors', () => {
+test('levels and ships', () => {
   const g = quietEngine();
   const s = g.state;
   addXp(s, xpToNext(1));
@@ -363,9 +553,6 @@ test('levels, ships and sectors', () => {
   s.credits = 1e6;
   assert.ok(g.act('buyShip', 'prospector').ok);
   assert.ok(getStats(s).weapon.dmg > WEAPONS.blaster.dmg, 'bigger hull, bigger guns');
-  assert.ok(g.act('travel', 'cobalt').ok);
-  assert.equal(s.sector, 'cobalt');
-  assert.equal(g.act('travel', 'void').ok, false);
 });
 
 test('save/load round-trips and repairs bad data', () => {

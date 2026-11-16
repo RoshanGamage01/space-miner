@@ -1,9 +1,11 @@
 # SPACE MINER
 
-*Mine. Fight. Upgrade.* A pixel-art space mining and combat game for short
-breaks. Plain ES modules, no build step, no dependencies.
+*Mine the belt. Break the hives. Kill the Queen.* A pixel-art space action
+game for short breaks. Plain ES modules, no build step, no dependencies.
 
-![Top view](docs/screenshot.png)
+![Title](docs/title.png)
+![Boss fight](docs/screenshot.png)
+![Boss intro](docs/boss-intro.png)
 ![Cockpit view](docs/cockpit.png)
 
 ```bash
@@ -11,57 +13,55 @@ npm start        # then open http://localhost:5173/
 npm test         # headless simulation tests
 ```
 
-## How it plays
+## The game
 
-Mine asteroids, scoop up the ore, dock to sell, upgrade, and fight off the
-aliens that keep coming for you.
+You start as a lone miner in the Kepler Belt. Mine ore, sell it, upgrade.
+But every sector is infested: destroy its three **alien hives** and the
+**sector boss** comes for you. Beat it to open the next sector. Four sectors,
+four bosses, ending with the **Hive Queen**.
 
 | Control | Action |
 | --- | --- |
-| `W A S D` | Fly (`Shift` boost) |
+| `W A S D` | Fly |
+| `Shift` | **Dash** (brief invulnerability); hold to boost |
 | Mouse + **left click** | Mining laser |
 | **Right click** / `F` | Fire weapon |
 | `1`–`4` / `Q` | Switch weapon |
-| `Space` | Shockwave: hits everything nearby, wipes enemy shots |
-| `E` | Dock (sells your hold and repairs for free) / salvage |
-| `V` | Toggle **cockpit view** |
+| `Space` | Shockwave |
+| `E` | Dock (sells cargo, free repair) / salvage |
+| `V` | Cockpit view (`W`/`S` thrust, `A`/`D` turn, click for mouselook) |
 | `H` `M` `G` | Hangar, Market, Galaxy |
-
-**Cockpit view** puts you inside the ship: `W`/`S` thrust, `A`/`D` turn, click
-to capture the mouse and steer by looking around. Enemies get target brackets,
-and the dashboard shows hull, shields, a forward radar and your weapon.
+| `P` / `Esc` | Pause |
 
 ## What's in it
 
-- **Combat**: alien patrols every ~30–50s (swarmers that ram, spitters that
-  shoot, armored brutes), 3-wave **invasions**, a **mothership boss** that
-  fires bullet rings and launches swarmers, and cargo-stealing pirates. Quick
-  kills build a **combo** (up to x3 credits). The station turret covers you
-  near home.
-- **Weapons**: Blaster, Scatter, homing Missiles, piercing Railgun. Each one
-  upgrades to level 6. Shots also chip asteroids.
-- **Ship**: six upgrades (Laser, Engines, Armor, Shields, Cargo, Drone Tech)
-  and four hulls with bigger guns and holds.
-- **Drones** mine on their own and fill the station silo, even while you're
-  away (up to 3 hours).
-- **Four sectors**, each richer and more dangerous than the last.
-- One mission at a time, achievements, random events (meteors, crystal
-  motherlodes, derelicts, power surges).
-- Autosave to `localStorage`, synthesized sound, works on phones (touch flies
-  toward your finger and auto-targets).
+- **Campaign**: hives → boss → next sector. Bosses (Brood Mother, Storm
+  Reaper, Ember Titan, Hive Queen) cycle bullet patterns (rings, spirals,
+  aimed bursts, crosses), summon minions and enrage at half health.
+- **Perks**: every level-up, pick 1 of 3 from 14 stackable perks: Twin
+  Barrels, Ricochet, Critical Hits, Volatile Kills, Wingmen, Chain Laser,
+  Salvage Nanites and more.
+- **Enemies**: swarmers, spitters, bombers, brutes, snipers (telegraphed
+  lance), shielded guardians, pirates, gold **elites** that drop power-ups.
+- **Power-ups**: Overdrive, Quad Damage, Barrier, Magnet, Repair, Nuke.
+- **Weapons**: Blaster, Scatter, homing Missiles, piercing Railgun, each
+  upgradable. Six ship upgrades, four hulls, mining drones that work offline.
+- **Feel**: adaptive music (calm → combat → boss), glow, hit-stop, slow
+  motion on boss kills, damage numbers, kill-streak callouts, boss intros.
+- Title screen, pause, autosave, synthesized audio, phone support.
 
 ## Code layout
 
 ```
 src/
-  main.js               bootstraps everything: loop, autosave, offline progress
-  core/                 config (all balance numbers), state, math
+  main.js               loop, hit-stop / slow-mo, autosave, offline progress
+  core/                 config (all content + balance), state, math
   engine/               GameEngine (fixed-order step), GameLoop, input, camera
   systems/              pure simulation, no DOM: Player, Mining, Combat,
-                        Asteroids, Resources, Drones, Economy, Upgrades,
-                        Missions, Achievements, Events, Save
+                        Campaign, Asteroids, Resources, Drones, Economy,
+                        Upgrades (+ perks), Missions, Achievements, Events, Save
   render/               Renderer (top view), CockpitRenderer (first person),
-                        procedural pixel-art sprites, backdrop, particles
-  ui/                   UIManager (HUD + screens), audio, radar, icons
+                        procedural sprites, backdrop, particles
+  ui/                   UIManager (HUD, screens, title, perks), audio + music
 tests/                  node:test suite and a bot that plays the game
 ```

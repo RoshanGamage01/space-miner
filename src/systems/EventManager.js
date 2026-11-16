@@ -21,10 +21,7 @@ export function startEvent(state, id) {
   state.event = ev;
   state.stats.events++;
   if (id === 'invasion') nextWave(state, ev);
-  else if (id === 'mothership') {
-    const p = pointAround(state, 480, 560);
-    ev.target = spawnEnemy(state, 'mothership', p.x, p.y).id;
-  } else if (id === 'pirates') {
+  else if (id === 'pirates') {
     const n = Math.min(4, 2 + Math.floor(state.level / 5));
     const c = pointAround(state, 420, 520);
     for (let i = 0; i < n; i++) ev.ids.push(spawnEnemy(state, 'pirate', c.x + rand(-40, 40), c.y + rand(-40, 40)).id);
@@ -54,7 +51,7 @@ function nextWave(state, ev) {
 export function endEvent(state, natural = true) {
   const ev = state.event;
   if (!ev) return;
-  if (ev.id === 'pirates' || ev.id === 'mothership') for (const e of state.enemies) if (e.kind === 'pirate' || e.kind === 'mothership') e.flee = true;
+  if (ev.id === 'pirates') for (const e of state.enemies) if (e.kind === 'pirate') e.flee = true;
   if (ev.id === 'derelict') state.derelicts.length = 0;
   if (ev.id === 'rare') {
     const a = state.asteroids.find((q) => q.id === ev.target);
@@ -71,7 +68,7 @@ export function updateEvents(state, dt) {
   if (!state.nextEventAt) state.nextEventAt = state.time + FIRST_EVENT_AT;
   const ev = state.event;
   if (!ev) {
-    if (state.time >= state.nextEventAt && !state.ship.docked) {
+    if (state.time >= state.nextEventAt && !state.ship.docked && !state.bossId && !(state.ship.deadT > 0)) {
       const w = {};
       for (const id of EVENT_IDS) if (state.level >= EVENTS[id].minLevel) w[id] = EVENTS[id].weight;
       startEvent(state, pickWeighted(w));
@@ -91,11 +88,6 @@ export function updateEvents(state, dt) {
           ev.t = 0;
         }
       }
-    }
-    if (ev.id === 'mothership' && !alive(state, [ev.target])) {
-      ev.won = true;
-      ev.t = 0;
-      emit(state, 'victory', { name: 'Mothership destroyed', credits: 0 });
     }
     if (ev.id === 'pirates' && !alive(state, ev.ids)) ev.t = 0;
     if (ev.id === 'meteors') {
@@ -147,9 +139,5 @@ export const eventProgress = (state) => {
   const ev = state.event;
   if (!ev) return null;
   if (ev.id === 'invasion') return { label: `Wave ${ev.wave}/3`, left: state.enemies.filter((e) => ev.ids.includes(e.id)).length };
-  if (ev.id === 'mothership') {
-    const b = state.enemies.find((e) => e.id === ev.target);
-    return b ? { boss: b.hp / b.maxHp } : null;
-  }
   return null;
 };

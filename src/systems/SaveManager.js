@@ -1,15 +1,15 @@
 // SaveManager: localStorage persistence with validation, and capped offline
 // progress for the drone fleet. Transient world objects (asteroids, enemies,
 // shots) are regenerated on load; everything the player earned is kept.
-import { ACHIEVEMENT_IDS, MARKET, OFFLINE, RESOURCE_IDS, SAVE_VERSION, SECTORS, SHIPS, UPGRADES, UPGRADE_IDS, WEAPONS, WEAPON_MAX } from '../core/config.js';
+import { ACHIEVEMENT_IDS, HIVES_PER_SECTOR, MARKET, OFFLINE, PERKS, RESOURCE_IDS, SAVE_VERSION, SECTORS, SHIPS, UPGRADES, UPGRADE_IDS, WEAPONS, WEAPON_MAX } from '../core/config.js';
 import { addDrone, cargoUsed, createState, getStats } from '../core/state.js';
 import { clamp } from '../core/math.js';
 import { droneRate } from './DroneManager.js';
 import { addToBag } from './ResourceManager.js';
 
-export const SAVE_KEY = 'space-miner.save.v2';
+export const SAVE_KEY = 'space-miner.save.v3';
 
-const SAVED_KEYS = ['time', 'credits', 'xp', 'level', 'shipId', 'ownedShips', 'cargo', 'storage', 'upgrades', 'weapons', 'weapon', 'sector', 'unlockedSectors', 'market', 'marketTimer', 'missions', 'achievements', 'stats', 'settings', 'nextId', 'nextEventAt', 'nextPatrolAt'];
+const SAVED_KEYS = ['time', 'credits', 'xp', 'level', 'perks', 'pendingPerks', 'progress', 'won', 'shipId', 'ownedShips', 'cargo', 'storage', 'upgrades', 'weapons', 'weapon', 'sector', 'unlockedSectors', 'market', 'marketTimer', 'missions', 'achievements', 'stats', 'settings', 'nextId', 'nextEventAt', 'nextPatrolAt'];
 
 export function serialize(state, now = Date.now()) {
   const out = { version: SAVE_VERSION, savedAt: now };
@@ -64,6 +64,20 @@ export function deserialize(json) {
     }
   }
   if (st.weapons[data.weapon]) st.weapon = data.weapon;
+  if (data.perks && typeof data.perks === 'object') {
+    for (const id in PERKS) {
+      const n = intIn(data.perks[id], 0, 0, PERKS[id].max);
+      if (n > 0) st.perks[id] = n;
+    }
+  }
+  st.pendingPerks = intIn(data.pendingPerks, 0, 0, 50);
+  st.won = data.won === true;
+  if (data.progress && typeof data.progress === 'object') {
+    for (const id in SECTORS) {
+      const p = data.progress[id];
+      if (p && typeof p === 'object') st.progress[id] = { hives: intIn(p.hives, 0, 0, HIVES_PER_SECTOR), boss: p.boss === true };
+    }
+  }
   if (Array.isArray(data.unlockedSectors)) st.unlockedSectors = ['kepler', ...data.unlockedSectors.filter((s) => SECTORS[s] && s !== 'kepler')];
   if (SECTORS[data.sector] && st.unlockedSectors.includes(data.sector)) st.sector = data.sector;
   if (data.market) {
@@ -95,7 +109,7 @@ export function deserialize(json) {
   if (data.settings) {
     const s = data.settings;
     st.settings.volume = num(s.volume, 0.6, 0, 1);
-    for (const k of ['muted', 'music', 'hints']) if (typeof s[k] === 'boolean') st.settings[k] = s[k];
+    for (const k of ['muted', 'music', 'hints', 'glow']) if (typeof s[k] === 'boolean') st.settings[k] = s[k];
     if (s.view === 'cockpit' || s.view === 'top') st.settings.view = s.view;
   }
   st.nextId = intIn(data.nextId, 1, 1, 1e12);

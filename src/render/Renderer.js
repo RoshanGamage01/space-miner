@@ -1,9 +1,9 @@
 // Renderer: draws the world at a low internal resolution and lets CSS scale
 // it up with nearest-neighbour filtering, so every rotation, beam and
 // explosion reads as chunky pixel art. It only reads simulation state.
-import { RESOURCES, STATION, SECTORS } from '../core/config.js';
+import { BOSSES, POWERUPS, RESOURCES, STATION, SECTORS } from '../core/config.js';
 import { dist, len } from '../core/math.js';
-import { asteroidSprite, mapSprite, mothershipSprite, shade, stationHub } from './sprites.js';
+import { asteroidSprite, enemySprite, mapSprite, shade, stationHub } from './sprites.js';
 import { createBackground, drawBackground, drawDebris } from './background.js';
 import { ParticlePool } from './particles.js';
 import { drawText } from './pixelfont.js';
@@ -92,25 +92,58 @@ export class Renderer {
         }
         case 'kill': {
           const alien = e.kind !== 'pirate';
-          const big = e.boss ? 4 : e.r > 10 ? 2 : 1;
+          const big = e.boss ? 5 : e.big ? 3 : e.r > 10 ? 2 : 1;
           P.burst(e.x, e.y, 22 * big, alien ? '#9dff4a' : '#ff6a3d', 110 * Math.sqrt(big), 0.7, 1, 1);
           P.burst(e.x, e.y, 12 * big, alien ? '#1f4d24' : '#3a1520', 50 * big, 0.9, 3, 0);
           P.burst(e.x, e.y, 8 * big, '#fff1a8', 40, 0.4, 3, 2);
           const ring = P.spawn(e.x, e.y, 0, 0, 0.4, alien ? '#9dff4a' : '#ff8c42', 4, 3, 0, 60 * big);
           if (ring) ring.drag = 0;
-          if (e.combo >= 2) P.text(e.x, e.y - 12, `x${e.combo}`, '#ffd23e', e.combo >= 5 ? 2 : 1, 1);
+          if (e.boss || e.big) for (let k = 0; k < (e.boss ? 10 : 4); k++) P.burst(e.x + (Math.random() - 0.5) * e.r * 2, e.y + (Math.random() - 0.5) * e.r * 2, 14, k % 2 ? '#fff1a8' : e.color || '#ff4df0', 140, 0.9 + Math.random() * 0.6, 2, 1);
           cam.shake(e.boss ? 10 : 2 + big, e.boss ? 1 : 0.25);
           if (e.boss) this.flashT = 0.35;
           break;
         }
         case 'blast': {
-          P.burst(e.x, e.y, 26, '#ffd23e', 120, 0.5, 1, 1);
-          P.burst(e.x, e.y, 10, '#ff8c42', 60, 0.6, 3, 2);
+          P.burst(e.x, e.y, e.small ? 10 : 26, '#ffd23e', 120, 0.5, 1, 1);
+          if (!e.small) P.burst(e.x, e.y, 10, '#ff8c42', 60, 0.6, 3, 2);
           const ring = P.spawn(e.x, e.y, 0, 0, 0.35, '#ffe2a0', 3, 3, 0, e.r * 3);
           if (ring) ring.drag = 0;
-          cam.shake(2, 0.2);
+          if (!e.small) cam.shake(2, 0.2);
           break;
         }
+        case 'enemyHit':
+          if (e.shield) P.text(e.x, e.y - 4, 'BLOCK', '#7fd8ff', 1, 0.5);
+          else P.text(e.x, e.y - 4, String(Math.round(e.dmg)), e.crit ? '#ffd23e' : '#ffffff', e.crit ? 2 : 1, e.crit ? 0.9 : 0.5);
+          break;
+        case 'powerup': {
+          P.burst(ship.x, ship.y, 30, e.color, 120, 0.7, 1, 1);
+          const ring = P.spawn(ship.x, ship.y, 0, 0, 0.5, e.color, 6, 3, 0, e.id === 'nuke' ? 900 : 140);
+          if (ring) ring.drag = 0;
+          P.text(ship.x, ship.y - 22, e.name, e.color, 1, 1.6);
+          if (e.id === 'nuke') {
+            this.flashT = 0.5;
+            cam.shake(8, 0.7);
+          }
+          break;
+        }
+        case 'dash':
+          P.burst(e.x, e.y, 14, '#9fe8ff', 80, 0.35, 1, 1);
+          break;
+        case 'hiveDown':
+          cam.shake(7, 0.7);
+          this.flashT = 0.25;
+          break;
+        case 'enrage':
+          P.burst(e.x, e.y, 60, '#ff4d6d', 200, 0.8, 1, 1);
+          cam.shake(6, 0.6);
+          break;
+        case 'respawn':
+          cam.snap(ship.x, ship.y);
+          P.burst(ship.x, ship.y, 30, '#5ef1ff', 80, 0.8, 1, 1);
+          break;
+        case 'perk':
+          P.burst(ship.x, ship.y, 40, '#ffd23e', 110, 0.9, 1, 1);
+          break;
         case 'shotHit':
           P.burst(e.x, e.y, 5, e.color || '#ffffff', 60, 0.25, 1, 1);
           break;
@@ -197,8 +230,40 @@ export class Renderer {
 
 
     this.drawPrompts(state, ox, oy, view);
+    this.bloom(view);
     this.drawIndicators(state, stats, ox, oy, view);
     this.drawOverlays(state, stats, t);
+  }
+
+  // Cheap glow: darken a half-size copy so only bright pixels survive, blur
+  // it by downscaling, and add it back on top.
+  bloom(view) {
+    if (view.glow === false) return;
+    const { ctx, W, H } = this;
+    if (!this.bloomA || this.bloomA.width !== Math.ceil(W / 2)) {
+      this.bloomA = document.createElement('canvas');
+      this.bloomA.width = Math.ceil(W / 2);
+      this.bloomA.height = Math.ceil(H / 2);
+      this.bloomB = document.createElement('canvas');
+      this.bloomB.width = Math.ceil(W / 8);
+      this.bloomB.height = Math.ceil(H / 8);
+    }
+    const a = this.bloomA.getContext('2d');
+    a.globalCompositeOperation = 'source-over';
+    a.drawImage(this.canvas, 0, 0, this.bloomA.width, this.bloomA.height);
+    a.globalCompositeOperation = 'multiply';
+    a.drawImage(this.bloomA, 0, 0);
+    a.drawImage(this.bloomA, 0, 0);
+    const b = this.bloomB.getContext('2d');
+    b.clearRect(0, 0, this.bloomB.width, this.bloomB.height);
+    b.drawImage(this.bloomA, 0, 0, this.bloomB.width, this.bloomB.height);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.75;
+    ctx.drawImage(this.bloomB, 0, 0, W, H);
+    ctx.restore();
+    ctx.imageSmoothingEnabled = false;
   }
 
   drawBoundary(state, ox, oy) {
@@ -340,6 +405,24 @@ export class Renderer {
       const y = Math.round(p.y - oy + Math.sin(t * 3 + p.phase) * 1.2);
       if (x < -8 || y < -8 || x > this.W + 8 || y > this.H + 8) continue;
       if (p.life < 6 && Math.sin(t * 18) > 0) continue;
+      if (p.type.startsWith('pow_')) {
+        const def = POWERUPS[p.type.slice(4)];
+        const r = 5 + Math.round(Math.sin(t * 6 + p.phase));
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = def.color;
+        ctx.fillRect(x - r - 2, y - r - 2, r * 2 + 4, r * 2 + 4);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = '#05060f';
+        ctx.fillRect(x - 5, y - 5, 10, 10);
+        ctx.fillStyle = def.color;
+        ctx.fillRect(x - 4, y - 4, 8, 8);
+        ctx.fillStyle = '#05060f';
+        ctx.fillRect(x - 3, y - 3, 6, 6);
+        drawText(ctx, def.name[0], x, y, def.color);
+        continue;
+      }
       const credits = p.type === 'credits';
       const col = credits ? '#ffd23e' : RESOURCES[p.type].color;
       const hi = credits ? '#fff6c2' : RESOURCES[p.type].glow;
@@ -409,7 +492,37 @@ export class Renderer {
     // Laser beam under the ship nose.
     if (ship.laser) this.drawLaser(ship.laser, ox, oy, t, dt);
 
-    const blink = ship.invuln > 0 && Math.sin(t * 30) > 0;
+    if (ship.deadT > 0) return;
+    // Dash afterimages.
+    this.ghosts = (this.ghosts || []).filter((g) => (g.t -= dt) > 0);
+    if (ship.dashT > 0) this.ghosts.push({ x: ship.x, y: ship.y, a: ship.angle, t: 0.25 });
+    for (const g of this.ghosts) {
+      ctx.save();
+      ctx.globalAlpha = g.t * 2.4;
+      ctx.translate(Math.round(g.x - ox), Math.round(g.y - oy));
+      ctx.rotate(Math.round(g.a * 16) / 16);
+      ctx.drawImage(spr.flash, -Math.floor(spr.w / 2), -Math.floor(spr.h / 2));
+      ctx.restore();
+    }
+    for (const w of state.wingmen) {
+      const ws = mapSprite('drone', 'drone');
+      ctx.save();
+      ctx.translate(Math.round(w.x - ox), Math.round(w.y - oy));
+      ctx.rotate(Math.round(w.angle * 8) / 8);
+      ctx.drawImage(ws.img, -Math.floor(ws.w / 2), -Math.floor(ws.h / 2));
+      ctx.restore();
+    }
+    if (stats.barrier) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = '#7aa8ff';
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t * 12);
+      ctx.beginPath();
+      ctx.arc(sx, sy, stats.shipRadius + 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    const blink = ship.invuln > 0 && !(ship.dashT > 0) && Math.sin(t * 30) > 0;
     if (!blink) {
       ctx.save();
       ctx.translate(sx, sy);
@@ -456,6 +569,13 @@ export class Renderer {
     pixelLine(ctx, x0, y0, x1, y1, 2 + wob, LASER.mid);
     ctx.globalAlpha = 1;
     pixelLine(ctx, x0, y0, x1, y1, 1, LASER.core);
+    for (const a of L.arcs || []) {
+      const mx = (a.x0 + a.x1) / 2 - ox + (Math.random() - 0.5) * 8;
+      const my = (a.y0 + a.y1) / 2 - oy + (Math.random() - 0.5) * 8;
+      ctx.globalAlpha = 0.9;
+      pixelLine(ctx, a.x0 - ox, a.y0 - oy, mx, my, 1, '#b6f1ff');
+      pixelLine(ctx, mx, my, a.x1 - ox, a.y1 - oy, 1, '#b6f1ff');
+    }
     // Impact flare.
     const r = L.hit ? 4 + wob * 2 : 2;
     ctx.fillStyle = L.hit ? '#ffffff' : LASER.mid;
@@ -521,63 +641,91 @@ export class Renderer {
     const ctx = this.ctx;
     const x = Math.round(e.x - ox);
     const y = Math.round(e.y - oy);
-    const m = e.r + 30;
-    if (x < -m || y < -m || x > this.W + m || y > this.H + m) return;
-    if (e.kind === 'mothership') {
-      const spr = mothershipSprite();
+    const m = e.r + 40;
+    // Sniper telegraph: a thin line that locks just before the shot.
+    if (e.aimT > 0) {
       ctx.globalCompositeOperation = 'lighter';
-      const g = ctx.createRadialGradient(x, y, 10, x, y, 60);
-      g.addColorStop(0, 'rgba(255,77,240,0.25)');
-      g.addColorStop(1, 'rgba(255,77,240,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(x - 60, y - 60, 120, 120);
+      ctx.globalAlpha = e.aimT < 0.25 ? 0.9 : 0.35;
+      pixelLine(ctx, x, y, x + Math.cos(e.aimAngle) * 460, y + Math.sin(e.aimAngle) * 460, 1, e.aimT < 0.25 ? '#ffffff' : '#ff4df0');
+      ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.round(t * 0.4 * 16) / 16);
-      ctx.drawImage(e.hitT > 0 ? spr.flash : spr.img, -spr.size / 2, -spr.size / 2);
-      ctx.restore();
-    } else {
-      const pal = e.kind === 'pirate' ? 'pirate' : e.kind === 'brute' ? 'brute' : 'alien';
-      const spr = mapSprite(e.kind, pal);
-      if (e.kind === 'pirate') {
-        const back = spr.w / 2 - 1;
-        this.drawFlame(x - Math.cos(e.angle) * back, y - Math.sin(e.angle) * back, e.angle, 4, e.flee, ['#ffd0a0', '#ff4d3d', '#7a1020']);
+    }
+    if (x < -m || y < -m || x > this.W + m || y > this.H + m) return;
+    const { spr, k } = enemySprite(e, BOSSES);
+    const big = e.kind === 'boss' || e.kind === 'hive';
+    const col = e.kind === 'pirate' ? '#ff8c42' : e.elite ? '#ffd23e' : e.bossKey ? BOSSES[e.bossKey].color : '#9dff4a';
+    if (big || e.elite) {
+      ctx.globalCompositeOperation = 'lighter';
+      const R = e.r * (big ? 2 : 2.4);
+      const g = ctx.createRadialGradient(x, y, e.r * 0.3, x, y, R);
+      g.addColorStop(0, (e.kind === 'hive' ? '#ff4df0' : col) + '55');
+      g.addColorStop(1, col + '00');
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3 + e.id);
+      ctx.fillStyle = g;
+      ctx.fillRect(x - R, y - R, R * 2, R * 2);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (e.kind === 'pirate') {
+      const back = spr.w / 2 - 1;
+      this.drawFlame(x - Math.cos(e.angle) * back, y - Math.sin(e.angle) * back, e.angle, 4, e.flee, ['#ffd0a0', '#ff4d3d', '#7a1020']);
+    }
+    const w = spr.w * k;
+    const h = spr.h * k;
+    const rot = e.kind === 'boss' ? t * 0.4 : e.kind === 'hive' ? Math.sin(t * 0.8 + e.id) * 0.08 : e.angle;
+    const pulse = e.kind === 'hive' ? 1 + 0.04 * Math.sin(t * 4 + e.id) : 1;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.round(rot * 16) / 16);
+    ctx.drawImage(spr.img, (-w / 2) * pulse, (-h / 2) * pulse, w * pulse, h * pulse);
+    if (e.hitT > 0 && Math.sin(t * 50) > 0) {
+      ctx.globalAlpha = big ? 0.35 : 0.9;
+      ctx.drawImage(spr.flash, -w / 2, -h / 2, w, h);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    if (e.kind === 'bomber' && Math.sin(t * 14) > 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - 1, y - 1, 2, 2);
+    }
+    // Guardian energy shield.
+    if (e.shield > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = '#7fd8ff';
+      const R = e.r * 1.5 + 3;
+      for (let i = 0; i < 28; i++) {
+        const a = (i / 28) * Math.PI * 2 + t * 2;
+        ctx.globalAlpha = 0.35 + 0.5 * (e.shield / e.shieldMax) * (i % 2);
+        ctx.fillRect(Math.round(x + Math.cos(a) * R), Math.round(y + Math.sin(a) * R), 1, 1);
       }
-      const k = e.kind === 'pirate' ? 1 : 1.5;
-      const w = spr.w * k;
-      const h = spr.h * k;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.round(e.angle * 16) / 16);
-      ctx.drawImage(spr.img, -w / 2, -h / 2, w, h);
-      if (e.hitT > 0 && Math.sin(t * 50) > 0) ctx.drawImage(spr.flash, -w / 2, -h / 2, w, h);
-      ctx.restore();
-      // Hostile brackets.
-      const col = e.kind === 'pirate' ? '#ff8c42' : '#9dff4a';
-      const R = Math.round(e.r * 1.4 + 3);
-      const L = 3;
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (e.steal > 0.2) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.5;
+      pixelLine(ctx, x, y, ship.x - ox, ship.y - oy, 1, '#ff4d6d');
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (!big) {
+      const R = Math.round(e.r * (e.elite ? 1.3 : 1) * 1.4 + 3);
+      const L = e.elite ? 5 : 3;
       ctx.fillStyle = col;
-      ctx.globalAlpha = 0.75;
+      ctx.globalAlpha = 0.8;
       for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
         ctx.fillRect(x + sx * R - (sx > 0 ? L - 1 : 0), y + sy * R, L, 1);
         ctx.fillRect(x + sx * R, y + sy * R - (sy > 0 ? L - 1 : 0), 1, L);
       }
       ctx.globalAlpha = 1;
-      if (e.steal > 0.2) {
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.5;
-        pixelLine(ctx, x, y, ship.x - ox, ship.y - oy, 1, '#ff4d6d');
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = 'source-over';
-      }
     }
-    if (e.hp < e.maxHp && e.kind !== 'mothership') {
-      const w = Math.max(10, e.r * 2);
+    if (e.hp < e.maxHp && e.kind !== 'boss') {
+      const bw = Math.max(10, e.r * 2);
+      const by = y + e.r * 1.4 + 6;
       ctx.fillStyle = '#05060f';
-      ctx.fillRect(x - w / 2 - 1, y + e.r * 1.4 + 5, w + 2, 3);
-      ctx.fillStyle = e.kind === 'pirate' ? '#ff8c42' : '#9dff4a';
-      ctx.fillRect(x - w / 2, y + e.r * 1.4 + 6, Math.max(1, Math.round((w * e.hp) / e.maxHp)), 1);
+      ctx.fillRect(x - bw / 2 - 1, by - 1, bw + 2, 3);
+      ctx.fillStyle = col;
+      ctx.fillRect(x - bw / 2, by, Math.max(1, Math.round((bw * e.hp) / e.maxHp)), 1);
     }
   }
 
@@ -591,6 +739,13 @@ export class Renderer {
       const sp = Math.hypot(s.vx, s.vy) || 1;
       const ux = s.vx / sp;
       const uy = s.vy / sp;
+      if (s.team === 'enemy' && s.kind === 'beam') {
+        ctx.globalAlpha = 0.5;
+        pixelLine(ctx, x, y, x - ux * 26, y - uy * 26, 3, s.color);
+        ctx.globalAlpha = 1;
+        pixelLine(ctx, x, y, x - ux * 22, y - uy * 22, 1, '#ffffff');
+        continue;
+      }
       if (s.team === 'enemy') {
         ctx.fillStyle = s.color;
         ctx.globalAlpha = 0.4;
@@ -655,7 +810,11 @@ export class Renderer {
       if (a) targets.push({ x: a.x, y: a.y, color: '#d66bff', label: '' });
     }
     for (const d of state.derelicts) targets.push({ x: d.x, y: d.y, color: '#7dffb0', label: '' });
-    for (const e of state.enemies) if (dist(e.x, e.y, ship.x, ship.y) < 800) targets.push({ x: e.x, y: e.y, color: e.kind === 'pirate' ? '#ff8c42' : '#9dff4a', label: '' });
+    for (const e of state.enemies) {
+      if (e.kind === 'hive') targets.push({ x: e.x, y: e.y, color: '#ff4df0', label: 'HIVE' });
+      else if (e.kind === 'boss') targets.push({ x: e.x, y: e.y, color: '#ff4d6d', label: 'BOSS' });
+      else if (dist(e.x, e.y, ship.x, ship.y) < 800) targets.push({ x: e.x, y: e.y, color: e.kind === 'pirate' ? '#ff8c42' : e.elite ? '#ffd23e' : '#9dff4a', label: '' });
+    }
     const W = this.W;
     const H = this.H;
     const cx = ship.x - ox;

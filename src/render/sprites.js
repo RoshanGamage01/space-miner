@@ -124,6 +124,29 @@ const MAPS = {
     'kddhhggcccgghhdk',
     'eddhhgccwccgghdk',
   ],
+  bomber: [
+    '...kkk...',
+    '..koook..',
+    '.kogggok.',
+    'kogwwwgok',
+    'kogwcwgok',
+  ],
+  sniper: [
+    '..............',
+    'kk............',
+    'kdkk..........',
+    '.kddkkkk......',
+    'kddhhgggkkkkkk',
+    'edhhgccwggggwk',
+  ],
+  guardian: [
+    '....kkkk....',
+    '..kkhhhhkk..',
+    '.khhggggghk.',
+    'khggdddggghk',
+    'khgddccdddgk',
+    'khgdccwccdgk',
+  ],
   derelict: [
     '..kk..............',
     '.kddk....k........',
@@ -140,6 +163,9 @@ const PALETTES = {
   pirate: { k: '#1a060c', h: '#b13a4f', d: '#621a2c', g: '#ec6a78', c: '#ffd23e', w: '#fff3b0', o: '#ffb02e', e: '#3a1520' },
   drone: { k: '#0b1424', h: '#5c7aa8', d: '#33476b', g: '#a9c3e8', c: '#56ffd0', w: '#e6fff7', o: '#ff8c42', e: '#2c3157' },
   alien: { k: '#06140a', h: '#3d8f3a', d: '#1f4d24', g: '#7dff6a', c: '#ff4df0', w: '#ffd6fb', o: '#ffb02e', e: '#123018' },
+  bomber: { k: '#1a0a02', o: '#ff8c42', g: '#ffb347', w: '#fff1a8', c: '#ff4d3d', h: '#c2511f', d: '#6b2413', e: '#2a0c06' },
+  sniper: { k: '#12061a', h: '#8f3a8a', d: '#4d1f4a', g: '#ff7df0', c: '#ffffff', w: '#ffd6fb', o: '#ffb02e', e: '#2a1030' },
+  guardian: { k: '#04121a', h: '#2f7fa8', d: '#17465c', g: '#7fd8ff', c: '#9dff4a', w: '#e6ffd6', o: '#ffb02e', e: '#0a2030' },
   brute: { k: '#0b0614', h: '#5a3a8f', d: '#2c1a4d', g: '#9b7dff', c: '#7dff6a', w: '#e6ffd6', o: '#ffb02e', e: '#1a1030' },
   derelict: { k: '#0c0d12', h: '#5b6070', d: '#353845', g: '#8b90a0', c: '#2b6b6f', w: '#9fd8d6', o: '#8a5a3a', e: '#1c1e26' },
 };
@@ -314,43 +340,98 @@ export function planetSprite(seed, r, colors, ringed) {
   return out;
 }
 
-// ------------------------------------------------------------ mothership
-export function mothershipSprite() {
-  if (spriteCache.has('mother')) return spriteCache.get('mother');
-  const size = 76;
+// ------------------------------------------------------------ bosses
+// One procedural saucer per boss: spiky hull, glowing core and pods.
+export function bossSprite(def) {
+  const key = `boss|${def.name}`;
+  if (spriteCache.has(key)) return spriteCache.get(key);
+  const R = def.r;
+  const size = Math.ceil(R * 2.3);
   const c = canvas(size, size);
   const ctx = c.getContext('2d');
   const cx = size / 2;
-  const cols = ['#140a24', '#2c1a4d', '#5a3a8f', '#9b7dff'];
+  const cols = def.hue;
   for (let y = 0; y < size; y++)
     for (let x = 0; x < size; x++) {
       const dx = x + 0.5 - cx;
       const dy = y + 0.5 - cx;
       const d = Math.hypot(dx, dy);
       const ang = Math.atan2(dy, dx);
-      const rr = 30 + Math.sin(ang * 8) * 4; // spiky hull
+      const rr = R * 0.88 + Math.sin(ang * def.spikes) * R * 0.13;
       if (d > rr) continue;
-      if (d > rr - 1.2) {
-        ctx.fillStyle = '#05020a';
-      } else if (d < 9) {
-        ctx.fillStyle = d < 5 ? '#ffd6fb' : '#ff4df0';
-      } else {
+      if (d > rr - 1.2) ctx.fillStyle = '#05020a';
+      else if (d < R * 0.26) ctx.fillStyle = d < R * 0.14 ? '#ffffff' : def.color;
+      else {
         const l = (-dx / rr) * 0.5 + (-dy / rr) * 0.5 + Math.sqrt(Math.max(0, 1 - (d / rr) ** 2)) * 0.5;
         let lv = Math.max(0, Math.min(3, Math.floor(l * 3 + dither(x, y) * 0.9)));
-        if (Math.abs(d - 16) < 0.7 || Math.abs(Math.sin(ang * 4)) < 0.05) lv = 0;
+        if (Math.abs(d - R * 0.48) < 0.7 || Math.abs(Math.sin((ang * def.spikes) / 2)) < 0.05) lv = 0;
         ctx.fillStyle = cols[lv];
       }
       ctx.fillRect(x, y, 1, 1);
     }
-  // Glowing pods.
-  for (let k = 0; k < 8; k++) {
-    const a = (k / 8) * Math.PI * 2;
-    ctx.fillStyle = '#7dff6a';
-    ctx.fillRect(Math.round(cx + Math.cos(a) * 22) - 1, Math.round(cx + Math.sin(a) * 22) - 1, 3, 3);
+  for (let k = 0; k < def.spikes; k++) {
+    const a = (k / def.spikes) * Math.PI * 2;
+    ctx.fillStyle = def.color;
+    ctx.fillRect(Math.round(cx + Math.cos(a) * R * 0.66) - 1, Math.round(cx + Math.sin(a) * R * 0.66) - 1, 3, 3);
   }
-  const out = { img: c, size, flash: silhouette(c, '#ffffff') };
-  spriteCache.set('mother', out);
+  const out = { img: c, size, w: size, h: size, flash: silhouette(c, '#ffffff') };
+  spriteCache.set(key, out);
   return out;
+}
+
+// Alien hive: an organic, pulsing nest.
+export function hiveSprite() {
+  if (spriteCache.has('hive')) return spriteCache.get('hive');
+  const size = 68;
+  const c = canvas(size, size);
+  const ctx = c.getContext('2d');
+  const cx = size / 2;
+  const rnd = mulberry(77);
+  const lumps = [];
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    lumps.push({ x: cx + Math.cos(a) * 15, y: cx + Math.sin(a) * 15, r: 9 + rnd() * 5 });
+  }
+  lumps.push({ x: cx, y: cx, r: 18 });
+  const cols = ['#1a0a24', '#3d1a5c', '#6a2f8f', '#a04dd6'];
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      let v = 0;
+      let edge = 9;
+      for (const l of lumps) {
+        const d = Math.hypot(x + 0.5 - l.x, y + 0.5 - l.y);
+        if (d < l.r) v = Math.max(v, 1 - d / l.r);
+        edge = Math.min(edge, Math.abs(d - l.r));
+      }
+      if (v <= 0) continue;
+      const dx = x - cx;
+      const dy = y - cx;
+      let lv = Math.max(0, Math.min(3, Math.floor(v * 2.2 + (-dx - dy) / 40 + 0.8 + dither(x, y) * 0.8)));
+      if (v < 0.12) lv = -1;
+      ctx.fillStyle = lv < 0 ? '#08030f' : cols[lv];
+      ctx.fillRect(x, y, 1, 1);
+    }
+  // Glowing spawn pores.
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + 0.3;
+    ctx.fillStyle = '#9dff4a';
+    ctx.fillRect(Math.round(cx + Math.cos(a) * 15) - 1, Math.round(cx + Math.sin(a) * 15) - 1, 3, 3);
+  }
+  ctx.fillStyle = '#ff4df0';
+  ctx.fillRect(cx - 4, cx - 4, 8, 8);
+  ctx.fillStyle = '#ffd6fb';
+  ctx.fillRect(cx - 2, cx - 2, 4, 4);
+  const out = { img: c, size, w: size, h: size, flash: silhouette(c, '#ffffff') };
+  spriteCache.set('hive', out);
+  return out;
+}
+
+// Sprite + draw scale for any enemy.
+export function enemySprite(e, BOSSES) {
+  if (e.kind === 'boss') return { spr: bossSprite(BOSSES[e.bossKey]), k: 1 };
+  if (e.kind === 'hive') return { spr: hiveSprite(), k: 1 };
+  const pal = { pirate: 'pirate', brute: 'brute', bomber: 'bomber', sniper: 'sniper', guardian: 'guardian' }[e.kind] || 'alien';
+  return { spr: mapSprite(e.kind, pal), k: (e.kind === 'pirate' ? 1 : 1.5) * (e.elite ? 1.3 : 1) };
 }
 
 // ------------------------------------------------------------ station hub

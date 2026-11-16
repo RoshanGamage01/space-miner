@@ -105,6 +105,8 @@ export function playBot(engine, seconds) {
         input.fire = rock.d < st.laserRange && !ship.overheat;
       }
     }
+    if (s.perkChoices) engine.act('perk', s.perkChoices[0]);
+    input.dash = !!enemy && enemy.d < 60 && ship.dashCd <= 0;
     engine.step(SIM_STEP, input);
     engine.drainFx();
   }
