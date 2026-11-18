@@ -1,67 +1,91 @@
-# SPACE MINER
+# SPACE MINER: Beyond the Silence
 
-*Mine the belt. Break the hives. Kill the Queen.* A pixel-art space action
-game for short breaks. Plain ES modules, no build step, no dependencies.
+A 3D space exploration game that runs in the browser. You crash on an alien
+world, mine it on foot, repair your ship, fly it off the planet into space with
+no loading screen, and travel an endless galaxy of kingdoms, traders, raiders
+and ruins to open the Ancient Gate.
 
-![Title](docs/title.png)
-![Boss fight](docs/screenshot.png)
-![Boss intro](docs/boss-intro.png)
-![Cockpit view](docs/cockpit.png)
+![Surface](docs/surface.png)
+![Village](docs/village.png)
+![Space](docs/space.png)
+![The Warden](docs/warden.png)
 
-```bash
-npm start        # then open http://localhost:5173/
-npm test         # headless simulation tests
-```
-
-## The game
-
-You start as a lone miner in the Kepler Belt. Mine ore, sell it, upgrade.
-But every sector is infested: destroy its three **alien hives** and the
-**sector boss** comes for you. Beat it to open the next sector. Four sectors,
-four bosses, ending with the **Hive Queen**.
-
-| Control | Action |
-| --- | --- |
-| `W A S D` | Fly |
-| `Shift` | **Dash** (brief invulnerability); hold to boost |
-| Mouse + **left click** | Mining laser |
-| **Right click** / `F` | Fire weapon |
-| `1`–`4` / `Q` | Switch weapon |
-| `Space` | Shockwave |
-| `E` | Dock (sells cargo, free repair) / salvage |
-| `V` | Cockpit view (`W`/`S` thrust, `A`/`D` turn, click for mouselook) |
-| `H` `M` `G` | Hangar, Market, Galaxy |
-| `P` / `Esc` | Pause |
-
-## What's in it
-
-- **Campaign**: hives → boss → next sector. Bosses (Brood Mother, Storm
-  Reaper, Ember Titan, Hive Queen) cycle bullet patterns (rings, spirals,
-  aimed bursts, crosses), summon minions and enrage at half health.
-- **Perks**: every level-up, pick 1 of 3 from 14 stackable perks: Twin
-  Barrels, Ricochet, Critical Hits, Volatile Kills, Wingmen, Chain Laser,
-  Salvage Nanites and more.
-- **Enemies**: swarmers, spitters, bombers, brutes, snipers (telegraphed
-  lance), shielded guardians, pirates, gold **elites** that drop power-ups.
-- **Power-ups**: Overdrive, Quad Damage, Barrier, Magnet, Repair, Nuke.
-- **Weapons**: Blaster, Scatter, homing Missiles, piercing Railgun, each
-  upgradable. Six ship upgrades, four hulls, mining drones that work offline.
-- **Feel**: adaptive music (calm → combat → boss), glow, hit-stop, slow
-  motion on boss kills, damage numbers, kill-streak callouts, boss intros.
-- Title screen, pause, autosave, synthesized audio, phone support.
-
-## Code layout
+## Play
 
 ```
-src/
-  main.js               loop, hit-stop / slow-mo, autosave, offline progress
-  core/                 config (all content + balance), state, math
-  engine/               GameEngine (fixed-order step), GameLoop, input, camera
-  systems/              pure simulation, no DOM: Player, Mining, Combat,
-                        Campaign, Asteroids, Resources, Drones, Economy,
-                        Upgrades (+ perks), Missions, Achievements, Events, Save
-  render/               Renderer (top view), CockpitRenderer (first person),
-                        procedural sprites, backdrop, particles
-  ui/                   UIManager (HUD, screens, title, perks), audio + music
-tests/                  node:test suite and a bot that plays the game
+npm start          # then open http://localhost:5173
 ```
+
+No install and no build step: plain ES modules, with Three.js vendored in
+`vendor/`. Any static file server works. A desktop browser with WebGL 2, a
+mouse and a keyboard are required.
+
+## Controls
+
+| | |
+|---|---|
+| WASD / mouse | move / look |
+| Space | jump, hold for jetpack |
+| Shift | run, ship boost |
+| Left mouse | mine or fire |
+| Q | switch mining beam / bolt caster |
+| F | scanner |
+| E | interact, talk, board ship |
+| V | first / third person |
+| H | med gel |
+| Tab, J, M | inventory and crafting, journal, galaxy map |
+| G | auto-land the ship |
+| A D, X | roll ship, cut throttle |
+| Esc | pause and settings |
+
+## What is in the game
+
+- **Planets you can walk on.** Whole spherical worlds with eight biomes, seas
+  and lava, weather hazards, day and night, trees, rocks and ore to mine.
+- **Seamless space flight.** Take off, leave the atmosphere, dock at a station,
+  fight pirates, and warp between star systems from the galaxy map.
+- **An endless galaxy.** Every system and planet is generated from its
+  coordinates, so the map never ends and is the same every time you return.
+- **Three alien kingdoms** (Thalori, Grumm, Vesh) with villages, capitals,
+  market prices that reward trade routes, reputation and contracts.
+- **Combat** against raiders, sentinels, pirates and a boss.
+- **A six-chapter story** with two endings, then free play.
+- **Upgrades and cosmetics**: tools, jetpack, shield, cargo, ship hull and
+  cannon; suit, visor, ship and engine-trail colours.
+- Autosave to the browser, four graphics presets, synthesized sound and music.
+
+## Graphics: what it is and is not
+
+Real-time WebGL 2 rendering: HDR with ACES tone mapping and bloom, soft shadow
+maps, a ray-marched atmospheric scattering sky, animated water, cloud layers,
+and level-of-detail terrain from orbit to ground. Models are procedural and
+low-poly by design.
+
+It does **not** use hardware ray tracing (browsers do not expose it), and it is
+not at the fidelity of a large studio title. Physics is purpose-built (spherical
+gravity, jetpack, swimming, arcade flight), not a general rigid-body engine.
+
+## Tests
+
+```
+npm test             # universe generation, economy, story, saving
+npm run test:classic # tests for the earlier 2D game
+```
+
+The full story was also played start to finish in a headless browser. That
+environment renders in software, so frame rate on real graphics hardware and the
+audio were not measured there. Touch devices are not supported.
+
+## Layout
+
+```
+src/core       noise and random numbers
+src/universe   galaxy, planets, biomes, items, factions
+src/world      terrain, shaders, models, settlements, props
+src/engine     renderer and post-processing
+src/game       player, ship, actors, story, state and saving
+src/ui         HUD, menus, audio
+classic/       the earlier 2D version of the game, kept playable
+```
+
+Three.js is MIT licensed; see `vendor/THREE-LICENSE`.

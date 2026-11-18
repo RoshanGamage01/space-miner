@@ -1,9 +1,13 @@
 {
   "name": "space-miner",
-  "version": "1.0.0",
-  "description": "SPACE MINER - Explore. Mine. Upgrade. Expand. A pixel-art space mining game.",
+  "version": "2.0.0",
+  "description": "SPACE MINER: Beyond the Silence - a 3D first/third-person space exploration, mining and trading game for the browser.",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node tools/serve.mjs", "test": "node --test" },
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node --test tests/game.test.js",
+    "test:classic": "node --test classic/tests/*.test.js"
+  },
   "license": "MIT"
 }

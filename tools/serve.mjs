@@ -36,5 +36,5 @@ createServer(async (req, res) => {
     res.writeHead(404).end('Not found');
   }
 }).listen(port, () => {
-  console.log(`SPACE MINER running at http://localhost:${port}`);
+  console.log(`SPACE MINER: Beyond the Silence running at http://localhost:${port}`);
 });
