@@ -211,7 +211,9 @@ func save() -> void:
 
 func load_save() -> bool:
 	if not has_save(): return false
-	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var js := JSON.new()
+	if js.parse(FileAccess.get_file_as_string(SAVE_PATH)) != OK: return false
+	var d = js.data
 	if typeof(d) != TYPE_DICTIONARY or int(d.get("version", 0)) != VERSION: return false
 	s = _merge(new_game(), d)
 	s.units = maxi(0, int(s.units))

@@ -16,6 +16,21 @@ var view_roots := 2
 var _indices: PackedInt32Array
 var _mutex := Mutex.new()
 var _done: Array = []
+var _tasks: Array = []
+
+func _exit_tree() -> void:
+	# Let worker threads finish before the height data goes away.
+	for t in _tasks: WorkerThreadPool.wait_for_task_completion(t)
+	_tasks.clear()
+
+func _track(id: int) -> void:
+	_tasks.append(id)
+	if _tasks.size() > 64:
+		var keep: Array = []
+		for t in _tasks:
+			if WorkerThreadPool.is_task_completed(t): WorkerThreadPool.wait_for_task_completion(t)
+			else: keep.append(t)
+		_tasks = keep
 
 class Patch:
 	var x: float; var z: float; var size: float
@@ -109,7 +124,7 @@ func _free(p: Patch) -> void:
 
 func _request(p: Patch) -> void:
 	p.building = true; pending += 1
-	WorkerThreadPool.add_task(_build.bind(p))
+	_track(WorkerThreadPool.add_task(_build.bind(p)))
 
 func _build(p: Patch) -> void:
 	var step := p.size / N

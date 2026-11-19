@@ -22,6 +22,21 @@ var pending := 0
 var removed := {} # id -> true (mined out)
 var _mutex := Mutex.new()
 var _done: Array = []
+var _tasks: Array = []
+
+func _exit_tree() -> void:
+	# Let worker threads finish before the height data goes away.
+	for t in _tasks: WorkerThreadPool.wait_for_task_completion(t)
+	_tasks.clear()
+
+func _track(id: int) -> void:
+	_tasks.append(id)
+	if _tasks.size() > 64:
+		var keep: Array = []
+		for t in _tasks:
+			if WorkerThreadPool.is_task_completed(t): WorkerThreadPool.wait_for_task_completion(t)
+			else: keep.append(t)
+		_tasks = keep
 var _mat_cache := {}
 
 func _init(h: Heightfield, b: Dictionary, s: int, q := 2) -> void:
@@ -134,7 +149,7 @@ func _ring(map: Dictionary, cam: Vector3, size: float, radius: int, big: bool) -
 				continue
 			var c := {"key": key, "node": null, "dead": false, "big": big, "near": maxi(absi(dx), absi(dz)) <= 1, "bodies": null, "data": null}
 			map[key] = c; pending += 1
-			WorkerThreadPool.add_task(_gen_big.bind(c) if big else _gen_cell.bind(c))
+			_track(WorkerThreadPool.add_task(_gen_big.bind(c) if big else _gen_cell.bind(c)))
 
 func _hash(a: int, b: int, c: int) -> int:
 	return hash(Vector4i(a, b, c, seed_))

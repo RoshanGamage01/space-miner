@@ -84,12 +84,17 @@ func apply() -> void:
 	sun.visible = sun.light_energy > 0.01
 	var md := Vector3(-d.x * 0.6 + 0.3, maxf(0.35, -d.y), -d.z * 0.6 - 0.5).normalized()
 	moon.look_at_from_position(Vector3.ZERO, -md, Vector3.UP)
-	moon.light_energy = 0.22 * (1.0 - day)
+	moon.light_energy = 0.3 * (1.0 - day)
 	moon.visible = moon.light_energy > 0.005
 	sky_mat.set_shader_parameter("time_", clock)
+	sky_mat.set_shader_parameter("sun_dir", d)
 	sky_mat.set_shader_parameter("moon_dir", Vector3(0.35, 0.42, -0.84))
 	env.ambient_light_energy = lerpf(0.6, 1.0, day)
 	# Open up exposure at night so moonlit ground stays readable.
-	env.tonemap_exposure = lerpf(2.6, 0.7, day)
+	env.tonemap_exposure = lerpf(1.7, 0.7, day)
+	env.fog_light_color = biome.haze
+	env.fog_light_energy = lerpf(0.02, 1.0, day)
+	env.volumetric_fog_ambient_inject = lerpf(0.05, 0.6, day)
+	env.sdfgi_energy = lerpf(0.5, 1.0, day)
 	Build.warm().emission_energy_multiplier = lerpf(4.0, 1.0, day)
 	env.volumetric_fog_emission = Color(0, 0, 0)

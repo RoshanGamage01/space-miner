@@ -86,6 +86,7 @@ func _unhandled_key_input(e: InputEvent) -> void:
 # ---------------------------------------------------------------- title
 func title() -> void:
 	_clear(); open = "title"; get_tree().paused = true; main.capture(false)
+	if main.world is SurfaceWorld: main.world.player.tool_node.visible = false
 	var grad := ColorRect.new(); grad.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var sh := Shader.new(); sh.code = "shader_type canvas_item; void fragment(){ COLOR = vec4(0.01, 0.02, 0.04, mix(0.15, 0.82, smoothstep(0.75, 0.1, UV.x)) ); }"
 	var sm := ShaderMaterial.new(); sm.shader = sh; grad.material = sm; root.add_child(grad)

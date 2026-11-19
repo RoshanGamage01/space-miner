@@ -53,6 +53,24 @@ static func glass(tint := Color(0.05, 0.09, 0.12), alpha := 0.35) -> StandardMat
 	_mats[key] = m
 	return m
 
+static var _dot: GradientTexture2D
+
+## Soft additive particle sprite.
+static func spark_mat(color: Color, energy := 4.0) -> StandardMaterial3D:
+	var key := "spark|%s|%s" % [color, energy]
+	if _mats.has(key): return _mats[key]
+	if _dot == null:
+		var g := Gradient.new(); g.set_color(0, Color(1, 1, 1, 1)); g.set_color(1, Color(1, 1, 1, 0)); g.add_point(0.35, Color(1, 1, 1, 0.5))
+		_dot = GradientTexture2D.new(); _dot.gradient = g; _dot.fill = GradientTexture2D.FILL_RADIAL
+		_dot.fill_from = Vector2(0.5, 0.5); _dot.fill_to = Vector2(1.0, 0.5); _dot.width = 64; _dot.height = 64
+	var m := StandardMaterial3D.new(); m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES; m.billboard_keep_scale = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.albedo_texture = _dot; m.albedo_color = Color(color.r * energy, color.g * energy, color.b * energy, 1.0)
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED; m.no_depth_test = false; m.disable_receive_shadows = true
+	_mats[key] = m
+	return m
+
 static func inst(mesh: Mesh, mat: Material, parent: Node3D, pos := Vector3.ZERO, rot := Vector3.ZERO, scl := Vector3.ONE) -> MeshInstance3D:
 	var mi := MeshInstance3D.new(); mi.mesh = mesh; mi.material_override = mat
 	mi.position = pos; mi.rotation = rot; mi.scale = scl

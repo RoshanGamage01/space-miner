@@ -40,9 +40,9 @@ static func _village(world, s: Dictionary, node: Node3D, rnd: RandomNumberGenera
 		else: _put(node, Build.hab(accent, rnd.randf_range(8.0, 11.0), 6.0, 2 if (capital and i % 3 == 0) else 1), pos, yaw)
 		var lp := Vector3(cos(a + 0.26) * (r - 9.0), 0, sin(a + 0.26) * (r - 9.0))
 		Build.lamp(node, lp, atan2(-lp.x, -lp.z))
-	var pad_pos := Vector3(ring + 34.0, 0, 6.0)
+	var pad_pos := Vector3(ring + 20.0, 0, 6.0)
 	_put(node, Build.pad(accent), pad_pos, 0.0)
-	_put(node, Build.mast(accent, 18.0 if not capital else 26.0), Vector3(-ring - 12.0, 0, -8.0), 0.0)
+	_put(node, Build.mast(accent, 18.0 if not capital else 26.0), Vector3(-ring - 8.0, 0, -8.0), 0.0)
 	# Market.
 	var mp := Vector3(9.0, 0, 15.0) if not capital else Vector3(22.0, 0, 24.0)
 	var myaw := atan2(-mp.x, -mp.z)
@@ -91,7 +91,7 @@ static func _outpost(world, s: Dictionary, node: Node3D, rnd: RandomNumberGenera
 		var p := Vector3(cos(a) * 26.0, 0, sin(a) * 26.0)
 		Kit.prop("flood_lights", node, p, atan2(-p.x, -p.z), 1.6)
 		var sp := SpotLight3D.new(); sp.position = p + Vector3(0, 3.6, 0); sp.light_color = Color(1.0, 0.9, 0.75); sp.light_energy = 12.0; sp.spot_range = 45.0; sp.spot_angle = 38.0; sp.shadow_enabled = true
-		node.add_child(sp); sp.look_at_from_position(sp.position, Vector3(0, 0.5, 0), Vector3.UP)
+		sp.transform = Transform3D(Basis.looking_at(Vector3(0, 0.5, 0) - sp.position, Vector3.UP), sp.position); node.add_child(sp)
 	for i in 8:
 		var a := rnd.randf() * TAU; var r := rnd.randf_range(4.0, 26.0)
 		Kit.prop(["old_military_crate", "Barrel_01", "propane_tank", "metal_jerrycan", "portable_generator"][rnd.randi() % 5], node, Vector3(cos(a) * r, 0, sin(a) * r), rnd.randf() * TAU, 1.3)

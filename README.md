@@ -6,17 +6,34 @@ dock at stations, trade between three machine kingdoms, fight rogue machines
 and pirates, and warp across an endless galaxy to decide the fate of the
 Ancient Gate.
 
+![Desert capital](docs/desert.png)
+![Night at the village](docs/night.png)
+![Exotic world](docs/exotic.png)
+![The Ancient Gate](docs/gate.png)
+
 ## Run it on macOS
+
+**Ready-made app.** In Terminal:
+
+```
+git clone --depth 1 -b mac-build https://github.com/RoshanGamage01/space-miner.git space-miner-mac
+cd space-miner-mac && sh install.sh
+```
+
+That joins the download into `Space Miner- Beyond the Silence.app` (Apple
+Silicon and Intel) and opens it. The app is not notarised by Apple, so the
+script clears the download quarantine flag; if macOS still objects,
+right-click the app and choose **Open**.
+
+**From source.**
 
 1. Download **Godot 4.5** (standard build) from <https://godotengine.org/download/macos/> and open it.
 2. Click **Import**, choose this folder's `project.godot`, then **Import & Edit**.
    The first import takes a few minutes while textures are processed.
 3. Press **Play** (▶, or Cmd+B).
 
-To make a standalone `SpaceMiner.app`: in Godot choose **Project → Export…**,
-let it download the export templates when asked, pick the included **macOS**
-preset and click **Export Project**. The same project also runs on Windows and
-Linux.
+The same project runs on Windows and Linux, and **Project → Export…** builds
+the app with the included macOS preset.
 
 An Apple Silicon Mac or a Mac with a dedicated GPU is recommended. If it runs
 slowly, press **Esc → Settings** and lower **Graphics**.

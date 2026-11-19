@@ -24,7 +24,7 @@ func _init(m, system: Dictionary) -> void:
 	var nt := NoiseTexture2D.new(); var fn := FastNoiseLite.new(); fn.frequency = 0.008; fn.fractal_octaves = 5
 	nt.noise = fn; nt.seamless = true; nt.generate_mipmaps = true
 	sky_mat.set_shader_parameter("cloud_tex", nt); sky_mat.set_shader_parameter("airless", 1.0); sky_mat.set_shader_parameter("cloud_cover", 0.0)
-	sky_mat.set_shader_parameter("moon_size", 0.0)
+	sky_mat.set_shader_parameter("moon_size", 0.0); sky_mat.set_shader_parameter("sun_dir", Vector3(0.5, 0.25, 0.8).normalized())
 	var sky := Sky.new(); sky.sky_material = sky_mat; sky.radiance_size = Sky.RADIANCE_SIZE_128
 	env.background_mode = Environment.BG_SKY; env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR; env.ambient_light_color = Color(0.16, 0.19, 0.28); env.ambient_light_energy = 0.5
@@ -58,10 +58,10 @@ func _planet(d: Dictionary) -> void:
 	var sm := SphereMesh.new(); sm.radius = d.radius; sm.height = d.radius * 2.0; sm.radial_segments = 128; sm.rings = 64
 	var m := ShaderMaterial.new(); m.shader = load("res://shaders/planet.gdshader")
 	m.set_shader_parameter("noise", noise3d)
-	var a_col: Color = (b.grass_col * 0.75) if b.grass > 0.5 else _avg(b.a) * b.tint_a
-	var b_col: Color = _avg(b.b) * b.tint_b
+	var oc: Array = ORBIT[d.type]
+	var a_col: Color = oc[0]; var b_col: Color = oc[1]
 	m.set_shader_parameter("land_a", a_col); m.set_shader_parameter("land_b", b_col)
-	m.set_shader_parameter("rock_col", _avg(b.rock) * b.tint_rock)
+	m.set_shader_parameter("rock_col", oc[2])
 	m.set_shader_parameter("sea_col", b.water if not b.get("lava", false) else Color(0.9, 0.2, 0.02))
 	var has_sea: bool = b.sea > -100.0
 	m.set_shader_parameter("sea_level", (0.5 + d.get("sea_bias", 0.0) * 0.003) if has_sea else 0.0)
@@ -78,18 +78,15 @@ func _planet(d: Dictionary) -> void:
 		Kit.inst(am, rm, n).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	planets.append({"desc": d, "node": n, "radius": d.radius})
 
-static var _avg_cache := {}
-static func _avg(tex: String) -> Color:
-	if _avg_cache.has(tex): return _avg_cache[tex]
-	var img: Image = Biomes.tex(tex, "diff").get_image()
-	if img.is_compressed(): img.decompress()
-	img.resize(4, 4, Image.INTERPOLATE_BILINEAR)
-	var c := Color(0, 0, 0)
-	for y in 4: for x in 4: c += img.get_pixel(x, y)
-	c = Color(c.r / 16.0, c.g / 16.0, c.b / 16.0).srgb_to_linear()
-	c = Color(c.r, c.g, c.b) * 1.15
-	_avg_cache[tex] = c
-	return c
+## Land colours of each world type as seen from orbit.
+const ORBIT := {
+	"lush": [Color(0.16, 0.3, 0.09), Color(0.3, 0.27, 0.15), Color(0.34, 0.33, 0.32)],
+	"desert": [Color(0.62, 0.3, 0.14), Color(0.72, 0.5, 0.28), Color(0.45, 0.22, 0.12)],
+	"frozen": [Color(0.8, 0.85, 0.92), Color(0.65, 0.72, 0.85), Color(0.3, 0.34, 0.42)],
+	"volcanic": [Color(0.12, 0.09, 0.08), Color(0.2, 0.14, 0.12), Color(0.08, 0.07, 0.07)],
+	"barren": [Color(0.4, 0.4, 0.42), Color(0.28, 0.28, 0.3), Color(0.2, 0.2, 0.22)],
+	"exotic": [Color(0.5, 0.16, 0.38), Color(0.32, 0.2, 0.5), Color(0.35, 0.3, 0.42)],
+}
 
 func _station() -> void:
 	station = Node3D.new(); station.position = sys.station.pos; add_child(station)
@@ -165,7 +162,7 @@ func raycast(from: Vector3, dir: Vector3, max_d: float, exclude: Array = []) -> 
 
 func shoot(from: Vector3, dir: Vector3, dmg: float, friendly: bool, speed := 600.0, color := Color(1.0, 0.4, 0.2)) -> void:
 	var mi := MeshInstance3D.new(); mi.mesh = bolt_mesh
-	mi.material_override = Kit.glow(Color(0.4, 0.95, 1.0) if friendly else color, 16.0)
+	mi.material_override = Kit.glow(Color(0.4, 0.95, 1.0) if friendly else color, 7.0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	bolts.append({"node": mi, "pos": from, "dir": dir, "dmg": dmg, "friendly": friendly, "life": 2.5, "speed": speed})
@@ -174,12 +171,11 @@ func burst(pos: Vector3, color: Color, amount := 60) -> void:
 	var p := GPUParticles3D.new(); p.amount = amount; p.lifetime = 1.0; p.one_shot = true; p.explosiveness = 0.95
 	var pm := ParticleProcessMaterial.new(); pm.spread = 180.0; pm.initial_velocity_min = 8.0; pm.initial_velocity_max = 40.0; pm.gravity = Vector3.ZERO
 	pm.scale_min = 2.0; pm.scale_max = 6.0; p.process_material = pm
-	var q := QuadMesh.new(); q.size = Vector2(0.5, 0.5)
-	var m := StandardMaterial3D.new(); m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.albedo_color = color; m.emission_enabled = true; m.emission = color; m.emission_energy_multiplier = 8.0
+	var q := QuadMesh.new(); q.size = Vector2(0.6, 0.6)
+	var m := Kit.spark_mat(color)
 	q.material = m; p.draw_pass_1 = q
 	add_child(p); p.global_position = pos; p.emitting = true
-	get_tree().create_timer(1.6).timeout.connect(func(): if is_instance_valid(p): p.queue_free())
+	get_tree().create_timer(1.6).timeout.connect(p.queue_free)
 
 func _process(dt: float) -> void:
 	(station.get_node("Ring") as Node3D).rotate_y(dt * 0.03)

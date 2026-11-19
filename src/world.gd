@@ -23,6 +23,10 @@ var ground := StaticBody3D.new()
 var ground_shape := HeightMapShape3D.new()
 var ground_center := Vector2(1e9, 1e9)
 var ground_busy := false
+var ground_task := -1
+
+func _exit_tree() -> void:
+	if ground_task >= 0: WorkerThreadPool.wait_for_task_completion(ground_task); ground_task = -1
 var hazard_t := 0.0
 var bolt_mesh: CapsuleMesh
 
@@ -39,6 +43,8 @@ func _init(m, system: Dictionary, planet: Dictionary) -> void:
 	flora = Flora.new(hf, biome, desc.seed, q); add_child(flora)
 	for id in Game.s.mined.get(_key(), []): flora.removed[id] = true
 	atmo = Atmosphere.new(biome, q); atmo.time_of_day = desc.tod; add_child(atmo)
+	for k in ["glow_enabled", "ssao_enabled", "sdfgi_enabled", "ssr_enabled", "volumetric_fog_enabled", "fog_enabled", "ssil_enabled"]:
+		if main.args.has("no_" + k): atmo.env.set(k, false)
 	if has_water: _make_water()
 	cam.far = 24000.0; cam.near = 0.12; cam.fov = Game.s.settings.fov; add_child(cam); cam.make_current()
 	var cs := CollisionShape3D.new(); cs.shape = ground_shape; ground.add_child(cs); add_child(ground)
@@ -106,7 +112,7 @@ func _process(dt: float) -> void:
 	var pp := Vector2(player.global_position.x, player.global_position.z)
 	if not ground_busy and pp.distance_to(ground_center) > 14.0:
 		ground_busy = true
-		WorkerThreadPool.add_task(_build_ground.bind(Vector2(roundf(pp.x), roundf(pp.y))))
+		ground_task = WorkerThreadPool.add_task(_build_ground.bind(Vector2(roundf(pp.x), roundf(pp.y))))
 	_bolts(dt)
 	for a in actors: if is_instance_valid(a): a.tick(dt)
 	actors = actors.filter(func(a): return is_instance_valid(a))
@@ -128,6 +134,7 @@ func _apply_ground(c: Vector2, data: PackedFloat32Array) -> void:
 	ground_shape.map_data = data
 	ground.position = Vector3(c.x, 0, c.y)
 	ground_center = c; ground_busy = false
+	if ground_task >= 0: WorkerThreadPool.wait_for_task_completion(ground_task); ground_task = -1
 
 ## Ray against physics bodies and the terrain. Returns {pos, body, normal} or {}.
 func raycast(from: Vector3, dir: Vector3, max_d: float, exclude: Array = []) -> Dictionary:
@@ -161,7 +168,7 @@ func raycast(from: Vector3, dir: Vector3, max_d: float, exclude: Array = []) -> 
 
 func shoot(from: Vector3, dir: Vector3, dmg: float, friendly: bool, speed := 150.0, color := Color(1.0, 0.5, 0.2)) -> void:
 	var mi := MeshInstance3D.new(); mi.mesh = bolt_mesh
-	mi.material_override = Kit.glow(color if not friendly else Color(0.4, 0.95, 1.0), 14.0)
+	mi.material_override = Kit.glow(color if not friendly else Color(0.4, 0.95, 1.0), 6.0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	bolts.append({"node": mi, "pos": from, "dir": dir, "dmg": dmg, "friendly": friendly, "life": 3.0, "speed": speed})
@@ -188,18 +195,17 @@ func _bolts(dt: float) -> void:
 	bolts = bolts.filter(func(b): return b.life > 0.0)
 
 func burst(pos: Vector3, color: Color, amount := 40) -> void:
-	var p := GPUParticles3D.new(); p.amount = amount; p.lifetime = 0.7; p.one_shot = true; p.explosiveness = 0.95
+	var p := GPUParticles3D.new(); p.amount = amount; p.lifetime = 0.5; p.one_shot = true; p.explosiveness = 0.95
 	var pm := ParticleProcessMaterial.new(); pm.direction = Vector3.UP; pm.spread = 80.0; pm.initial_velocity_min = 2.0; pm.initial_velocity_max = 7.0
 	pm.gravity = Vector3(0, -9, 0); pm.scale_min = 0.6; pm.scale_max = 1.6
 	p.process_material = pm
-	var q := QuadMesh.new(); q.size = Vector2(0.09, 0.09)
-	var m := StandardMaterial3D.new(); m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.albedo_color = color; m.emission_enabled = true; m.emission = color; m.emission_energy_multiplier = 6.0
+	var q := QuadMesh.new(); q.size = Vector2(0.035, 0.035)
+	var m := Kit.spark_mat(color)
 	q.material = m; p.draw_pass_1 = q
 	add_child(p); p.global_position = pos; p.emitting = true
 	var l := OmniLight3D.new(); l.light_color = color; l.light_energy = 4.0; l.omni_range = 6.0; p.add_child(l)
-	get_tree().create_timer(0.15).timeout.connect(func(): if is_instance_valid(l): l.queue_free())
-	get_tree().create_timer(1.2).timeout.connect(func(): if is_instance_valid(p): p.queue_free())
+	get_tree().create_timer(0.15).timeout.connect(l.queue_free)
+	get_tree().create_timer(1.2).timeout.connect(p.queue_free)
 
 func ground_at(x: float, z: float) -> float:
 	return maxf(hf.height(x, z), hf.sea if has_water else -1e9)

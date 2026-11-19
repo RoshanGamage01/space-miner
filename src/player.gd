@@ -75,10 +75,10 @@ func _build_tool() -> void:
 	Kit.inst(Kit.bbox(Vector3(0.06, 0.03, 0.2), 0.01), orange, tool_node, Vector3(0, 0.072, -0.08))
 	var cell := Kit.inst(Kit.cyl(0.018, 0.018, 0.14, 12), Kit.glow(Color(0.3, 0.9, 1.0), 5.0), tool_node, Vector3(0, 0.075, -0.08), Vector3(PI / 2, 0, 0)); cell.name = "Cell"
 	Kit.inst(ShipModel._sphere(0.02), Kit.glow(Color(0.3, 0.9, 1.0), 8.0), tool_node, Vector3(0, 0.012, -0.6)).name = "Muzzle"
-	beam = MeshInstance3D.new(); var bm := CylinderMesh.new(); bm.top_radius = 0.02; bm.bottom_radius = 0.02; bm.height = 1.0; bm.radial_segments = 8
+	beam = MeshInstance3D.new(); var bm := CylinderMesh.new(); bm.top_radius = 0.012; bm.bottom_radius = 0.012; bm.height = 1.0; bm.radial_segments = 8
 	beam.mesh = bm
 	var bmat := StandardMaterial3D.new(); bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; bmat.albedo_color = Color(0.4, 0.95, 1.0)
-	bmat.emission_enabled = true; bmat.emission = Color(0.4, 0.95, 1.0); bmat.emission_energy_multiplier = 14.0
+	bmat.emission_enabled = true; bmat.emission = Color(0.4, 0.95, 1.0); bmat.emission_energy_multiplier = 5.0
 	beam.material_override = bmat; beam.visible = false; beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	beam.top_level = true; add_child(beam)
 	beam_light = OmniLight3D.new(); beam_light.light_color = Color(0.4, 0.95, 1.0); beam_light.omni_range = 7.0; beam_light.light_energy = 0.0; beam_light.top_level = true
@@ -91,9 +91,9 @@ func _particles(color: Color, amount: int, life: float, speed: float, dir := Vec
 	var pm := ParticleProcessMaterial.new(); pm.direction = dir; pm.spread = 35.0; pm.initial_velocity_min = speed * 0.5; pm.initial_velocity_max = speed
 	pm.gravity = Vector3(0, -6, 0); pm.scale_min = 0.5; pm.scale_max = 1.2
 	p.process_material = pm
-	var q := QuadMesh.new(); q.size = Vector2(0.06, 0.06)
-	var m := StandardMaterial3D.new(); m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.albedo_color = color; m.emission_enabled = true; m.emission = color; m.emission_energy_multiplier = 8.0
+	var q := QuadMesh.new(); q.size = Vector2(0.03, 0.03)
+	var m := Kit.spark_mat(color)
+	p.visible = false
 	q.material = m; p.draw_pass_1 = q
 	return p
 
@@ -135,7 +135,7 @@ func _physics_process(dt: float) -> void:
 		elif not on and Input.is_action_pressed("jump") and jet > 0.0:
 			velocity.y = minf(velocity.y + (g + 17.0) * dt, 8.0); jet -= dt; jetting = true
 	if on and not jetting: jet = minf(Game.jet_fuel(), jet + dt * 1.7)
-	jet_fx.emitting = jetting
+	jet_fx.emitting = jetting; jet_fx.visible = jetting
 	var fall := velocity.y
 	move_and_slide()
 	# Never fall through the world.
@@ -185,7 +185,7 @@ func _use_tool(dt: float) -> void:
 		var muzzle: Vector3 = tool_node.get_node("Muzzle").global_position if view == "first" else global_position + Vector3(0, 1.3, 0) + dir * 0.6
 		world.shoot(muzzle, (aim_point - muzzle).normalized(), Game.bolt_damage(), true)
 		world.main.sfx("shoot", -8.0)
-	beam.visible = mining; sparks.emitting = mining
+	beam.visible = mining; sparks.emitting = mining; sparks.visible = mining
 	beam_light.light_energy = 3.0 if mining else 0.0
 	if mining:
 		var muz: Vector3 = tool_node.get_node("Muzzle").global_position if view == "first" else global_position + Vector3(0, 1.25, 0) + right() * 0.3

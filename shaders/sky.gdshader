@@ -9,7 +9,8 @@ uniform sampler2D cloud_tex : filter_linear_mipmap, repeat_enable;
 uniform vec3 moon_dir = vec3(0.3, 0.5, -0.8);
 uniform vec3 moon_col : source_color = vec3(0.8, 0.7, 0.6);
 uniform float moon_size = 0.09;
-uniform float space_fade = 0.0; // 0 on the ground, 1 in orbit
+uniform float space_fade = 0.0;
+uniform vec3 sun_dir = vec3(0.3, 0.8, 0.5); // 0 on the ground, 1 in orbit
 
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 
@@ -22,7 +23,7 @@ float cloud_d(vec2 uv) {
 
 void sky() {
 	vec3 d = normalize(EYEDIR);
-	vec3 L = normalize(LIGHT0_DIRECTION);
+	vec3 L = normalize(sun_dir);
 	float sun_h = L.y;
 	float day = smoothstep(-0.12, 0.18, sun_h);
 	float air = (1.0 - airless) * (1.0 - space_fade);
