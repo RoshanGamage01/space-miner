@@ -1,3 +1,4 @@
-node_modules/
-.DS_Store
-*.log
+.godot/
+*.tmp
+build/
+shots/
