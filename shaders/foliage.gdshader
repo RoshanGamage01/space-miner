@@ -8,7 +8,7 @@ uniform vec3 tint : source_color = vec3(1.0);
 uniform float cutoff = 0.4;
 uniform float wind = 1.0;
 uniform float sphere_normals = 0.0;
-uniform float translucency = 0.6;
+uniform float translucency = 0.3;
 uniform float height_wind = 0.0;
 global uniform vec3 wind_dir;
 varying float vary;

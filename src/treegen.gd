@@ -3,8 +3,8 @@ class_name TreeGen
 
 const TR := "res://assets/trees/"
 const SPECIES := {
-	"broadleaf": {"bark": "island_tree_01/island_tree_01", "leaf": "broadleaf", "h": [9.0, 14.0], "r": 0.34, "first": 0.3, "n1": 9, "n2": 4, "spread": 1.05, "droop": -0.1, "card": 2.5, "len1": 0.55, "tint": Color(0.92, 1.0, 0.8)},
-	"broadleaf2": {"bark": "tree_small_02/tree_small_02", "leaf": "broadleaf2", "h": [6.0, 10.0], "r": 0.24, "first": 0.28, "n1": 8, "n2": 4, "spread": 1.2, "droop": 0.0, "card": 2.1, "len1": 0.6, "tint": Color(0.9, 1.0, 0.85)},
+	"broadleaf": {"bark": "island_tree_01/island_tree_01", "leaf": "broadleaf", "h": [9.0, 14.0], "r": 0.34, "first": 0.3, "n1": 12, "n2": 5, "spread": 1.05, "droop": -0.1, "card": 2.5, "len1": 0.55, "tint": Color(0.62, 0.72, 0.5)},
+	"broadleaf2": {"bark": "tree_small_02/tree_small_02", "leaf": "broadleaf2", "h": [6.0, 10.0], "r": 0.24, "first": 0.28, "n1": 11, "n2": 5, "spread": 1.2, "droop": 0.0, "card": 2.3, "len1": 0.6, "tint": Color(0.6, 0.72, 0.55)},
 	"jacaranda": {"bark": "jacaranda_tree/jacaranda_tree_trunk", "leaf": "jacaranda", "h": [8.0, 12.0], "r": 0.36, "first": 0.35, "n1": 8, "n2": 4, "spread": 1.25, "droop": 0.05, "card": 2.8, "len1": 0.7, "tint": Color(1.25, 0.6, 1.2)},
 	"pine": {"bark": "pine_tree_01/pine_tree_01_bark", "leaf": "pine", "h": [15.0, 24.0], "r": 0.32, "first": 0.3, "n1": 26, "n2": 0, "spread": 1.45, "droop": 0.5, "card": 3.4, "len1": 0.26, "conifer": true, "tint": Color(0.55, 0.72, 0.5)},
 	"fir": {"bark": "fir_tree_01/fir_tree_01_bark", "leaf": "fir", "h": [12.0, 20.0], "r": 0.3, "first": 0.16, "n1": 30, "n2": 0, "spread": 1.5, "droop": 0.6, "card": 3.0, "len1": 0.24, "conifer": true, "tint": Color(0.5, 0.68, 0.52)},

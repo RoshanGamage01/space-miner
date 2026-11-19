@@ -39,7 +39,7 @@ void sky() {
 	col = mix(col, warm * 1.1, low * pow(1.0 - up, 3.5) * (0.35 + 0.65 * pow(max(mu, 0.0), 2.0)) * 0.85);
 	// Mie glow around the sun.
 	vec3 sun_c = mix(vec3(1.0, 0.5, 0.2), vec3(1.0, 0.96, 0.9), smoothstep(0.0, 0.35, sun_h));
-	col += sun_c * (pow(max(mu, 0.0), 8.0) * 0.18 + pow(max(mu, 0.0), 90.0) * 0.5) * smoothstep(-0.1, 0.05, sun_h);
+	col += sun_c * (pow(max(mu, 0.0), 8.0) * 0.08 + pow(max(mu, 0.0), 90.0) * 0.25) * smoothstep(-0.1, 0.05, sun_h);
 	col *= air;
 	// Below the horizon: ground-coloured haze so reflections stay sane.
 	if (d.y < 0.0) col = mix(col, haze_col * 0.35 * mix(0.03, 1.0, day) * air, smoothstep(0.0, -0.25, d.y));

@@ -195,7 +195,17 @@ func _gen_big(c: Dictionary) -> void:
 	var key: Vector2i = c.key
 	var rnd := RandomNumberGenerator.new(); rnd.seed = _hash(key.x, key.y, 2)
 	var ox := key.x * BIG; var oz := key.y * BIG
-	var out := {"trees": [], "rocks": []}
+	var out := {"trees": [], "rocks": [], "ores": []}
+	for i in 3:
+		var x := ox + rnd.randf() * BIG; var z := oz + rnd.randf() * BIG
+		var roll := rnd.randf(); var yaw0 := rnd.randf() * TAU; var sc0 := rnd.randf_range(0.8, 1.5)
+		if i > 0 and rnd.randf() > 0.45: continue
+		var h := hf.height(x, z)
+		if h < hf.sea + 1.0 or hf.in_site(x, z, 1.2) or hf.normal(x, z, 2.0).y < 0.7: continue
+		var id := "o%d_%d_%d" % [key.x, key.y, i]
+		if removed.has(id): continue
+		var item := "copper" if roll < 0.5 else ("aetherium" if roll < 0.85 else "gold")
+		out.ores.append([item, Transform3D(Basis(Vector3.UP, yaw0).scaled(Vector3.ONE * sc0), Vector3(x - ox, h - 0.15, z - oz)), id])
 	if not trees.is_empty():
 		var step := 10.5; var n := int(BIG / step)
 		for j in n:
@@ -250,14 +260,24 @@ func _finish(d: Array) -> void:
 		for t in out.trees:
 			if not by.has(t[0]): by[t[0]] = []
 			by[t[0]].append(t[1])
+		c.mm = {}
 		for kind in by:
-			node.add_child(_mm(trees[kind].mesh0, by[kind], 0.0, 300.0))
-			node.add_child(_mm(trees[kind].mesh1, by[kind], 300.0, 1500.0, false))
+			var a := _mm(trees[kind].mesh0, by[kind], 0.0, 300.0); var b := _mm(trees[kind].mesh1, by[kind], 300.0, 1500.0, false)
+			node.add_child(a); node.add_child(b); c.mm["t%d" % kind] = [a, b]
+		for t in out.trees:
+			t.append(by[t[0]].find(t[1]))
 		by = {}
 		for r in out.rocks:
 			if not by.has(r[0]): by[r[0]] = []
 			by[r[0]].append(r[1])
-		for kind in by: node.add_child(_mm(rocks[kind].mesh, by[kind], 0.0, 1400.0))
+		for kind in by:
+			var a := _mm(rocks[kind].mesh, by[kind], 0.0, 1400.0)
+			node.add_child(a); c.mm["r%d" % kind] = [a]
+		for r in out.rocks: r.append(by[r[0]].find(r[1]))
+		for o in out.ores:
+			var dep := Deposit.make(o[0]); dep.transform = o[1]
+			dep.get_child(0).set_meta("res", {"kind": "ore", "item": o[0], "id": o[2], "hp": 30.0, "node": dep})
+			node.add_child(dep)
 	else:
 		var g: PackedFloat32Array = out.grass
 		if g.size() > 0:
@@ -289,13 +309,42 @@ func _colliders(c: Dictionary, want: bool) -> void:
 			var tr: Dictionary = trees[t[0]]
 			sh.radius = tr.radius * 1.1; sh.height = tr.height * 0.7
 			cs.shape = sh; cs.position.y = sh.height * 0.5; b.add_child(cs)
-			b.transform = t[1]; b.set_meta("res", {"kind": "tree", "id": t[2], "species": tr.species})
+			b.transform = t[1]; b.set_meta("res", {"kind": "tree", "id": t[2], "hp": 16.0, "mm": c.mm["t%d" % t[0]], "idx": t[3], "xf": t[1]})
 			holder.add_child(b)
 		for r in c.data.rocks:
 			var b := StaticBody3D.new(); var cs := CollisionShape3D.new()
 			cs.shape = rocks[r[0]].shape; b.add_child(cs)
-			b.transform = r[1]; b.set_meta("res", {"kind": "rock", "id": r[2], "size": r[3]})
+			b.transform = r[1]; b.set_meta("res", {"kind": "rock", "id": r[2], "hp": 8.0 + r[3] * 6.0, "mm": c.mm["r%d" % r[0]], "idx": r[4], "xf": r[1]})
 			holder.add_child(b)
 		c.node.add_child(holder)
 	elif not want and c.bodies != null:
 		c.bodies.queue_free(); c.bodies = null
+
+var _hp := {}
+
+## Apply mining work to a resource body. Returns {item, n, done}.
+func mine(body: Object, work: float) -> Dictionary:
+	var m: Dictionary = body.get_meta("res")
+	var id: String = m.id
+	var hp: float = _hp.get(id, m.hp)
+	var before := int(m.hp - hp)
+	hp -= work
+	_hp[id] = hp
+	var item: String = "ferrite" if m.kind == "rock" else ("carbon" if m.kind == "tree" else m.item)
+	var per := 1.0 if m.kind != "ore" else 0.5
+	var n := int((m.hp - maxf(hp, 0.0)) * per) - int(before * per)
+	var done := hp <= 0.0
+	var frac := clampf(hp / m.hp, 0.0, 1.0)
+	if m.kind == "ore":
+		if not m.has("s0"): m.s0 = m.node.scale
+		m.node.scale = m.s0 * lerpf(0.45, 1.0, frac)
+		if done: m.node.queue_free()
+	else:
+		var xf: Transform3D = m.xf
+		var sc := 0.0 if done else (lerpf(0.5, 1.0, frac) if m.kind == "rock" else 1.0)
+		var t := Transform3D(xf.basis.scaled(Vector3.ONE * sc), xf.origin - Vector3(0, (1.0 - sc) * 0.3, 0))
+		for mmi in m.mm: mmi.multimesh.set_instance_transform(m.idx, t)
+		if done: body.queue_free()
+		elif m.kind == "rock": body.transform = t
+	if done: removed[id] = true; _hp.erase(id)
+	return {"item": item, "n": n, "done": done}

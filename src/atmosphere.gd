@@ -29,8 +29,8 @@ func _init(b: Dictionary, q := 2) -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.0; env.tonemap_white = 6.0
-	env.glow_enabled = true; env.glow_intensity = 0.55; env.glow_bloom = 0.04; env.glow_hdr_threshold = 1.1
+	env.tonemap_exposure = 0.7; env.tonemap_white = 6.0
+	env.glow_enabled = true; env.glow_intensity = 0.35; env.glow_bloom = 0.04; env.glow_hdr_threshold = 1.1
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	env.set_glow_level(1, 0.3); env.set_glow_level(3, 0.8); env.set_glow_level(5, 1.0); env.set_glow_level(6, 0.6)
 	env.ssao_enabled = q >= 1; env.ssao_radius = 2.2; env.ssao_intensity = 2.4; env.ssao_power = 1.6
@@ -43,23 +43,19 @@ func _init(b: Dictionary, q := 2) -> void:
 	env.fog_density = 0.00007 + b.fog * 0.004
 	if b.get("airless", false): env.fog_enabled = false
 	env.volumetric_fog_enabled = q >= 2 and b.fog > 0.0
-	env.volumetric_fog_density = b.fog * 0.1; env.volumetric_fog_length = 420.0
-	env.volumetric_fog_anisotropy = 0.72; env.volumetric_fog_detail_spread = 2.4
+	env.volumetric_fog_density = b.fog * 0.022; env.volumetric_fog_length = 420.0
+	env.volumetric_fog_anisotropy = 0.6; env.volumetric_fog_detail_spread = 2.4
 	env.volumetric_fog_ambient_inject = 0.6; env.volumetric_fog_sky_affect = 0.0
 	env.volumetric_fog_albedo = Color(0.92, 0.94, 1.0).lerp(b.haze, 0.5)
 	env.adjustment_enabled = true; env.adjustment_contrast = 1.06; env.adjustment_saturation = 1.18
 	we.environment = env; add_child(we)
-	var cam_attr := CameraAttributesPractical.new()
-	cam_attr.auto_exposure_enabled = true; cam_attr.auto_exposure_min_sensitivity = 60.0; cam_attr.auto_exposure_max_sensitivity = 700.0
-	cam_attr.auto_exposure_speed = 0.8; cam_attr.auto_exposure_scale = 0.38
-	we.camera_attributes = cam_attr
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_max_distance = 420.0 if q >= 2 else 220.0
 	sun.directional_shadow_split_1 = 0.045; sun.directional_shadow_split_2 = 0.14; sun.directional_shadow_split_3 = 0.4
 	sun.directional_shadow_blend_splits = true
 	sun.shadow_blur = 1.4; sun.light_angular_distance = 0.6; sun.shadow_bias = 0.04; sun.shadow_normal_bias = 1.6
-	sun.light_volumetric_fog_energy = 1.6
+	sun.light_volumetric_fog_energy = 0.45
 	add_child(sun)
 	moon.light_color = Color(0.55, 0.68, 1.0); moon.light_energy = 0.0; moon.shadow_enabled = true
 	moon.directional_shadow_max_distance = 160.0; moon.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
@@ -92,5 +88,8 @@ func apply() -> void:
 	moon.visible = moon.light_energy > 0.005
 	sky_mat.set_shader_parameter("time_", clock)
 	sky_mat.set_shader_parameter("moon_dir", Vector3(0.35, 0.42, -0.84))
-	env.ambient_light_energy = lerpf(0.5, 1.0, day)
+	env.ambient_light_energy = lerpf(0.6, 1.0, day)
+	# Open up exposure at night so moonlit ground stays readable.
+	env.tonemap_exposure = lerpf(2.6, 0.7, day)
+	Build.warm().emission_energy_multiplier = lerpf(4.0, 1.0, day)
 	env.volumetric_fog_emission = Color(0, 0, 0)
